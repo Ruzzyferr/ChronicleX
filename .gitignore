@@ -1,4 +1,6 @@
 .env
+# TikTok URL verification download (sadece yerel; asıl dosya Ruzzyferr.github.io reposunda)
+tiktokp*.txt
 .claude/
 .venv/
 venv/

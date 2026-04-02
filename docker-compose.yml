@@ -1,0 +1,25 @@
+# Yerel geliştirme ve entegrasyon testleri için PostgreSQL.
+# Kullanım: docker compose up -d
+# Sonra: python scripts/wait_for_postgres.py && python run.py --init-db
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: chroniclex-postgres
+    environment:
+      POSTGRES_USER: chroniclex
+      POSTGRES_PASSWORD: chroniclex
+      POSTGRES_DB: chroniclex
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chroniclex -d chroniclex"]
+      interval: 3s
+      timeout: 5s
+      retries: 15
+      start_period: 5s
+    volumes:
+      - chroniclex_pgdata:/var/lib/postgresql/data
+
+volumes:
+  chroniclex_pgdata:

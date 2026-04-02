@@ -1,0 +1,23 @@
+topic_name: "Bilinmeyen şaşırtıcı tarihi gerçekler"
+language: "tr"
+tone: "karanlık, gizemli, sinematik, çarpıcı"
+video_duration_seconds: 45
+
+content_rules:
+  must_be_real: true
+  avoid_repetition: true
+  minimum_shock_score: 8
+  minimum_verification_score: 7
+  min_sources: 2
+
+publishing:
+  youtube_enabled: true
+  tiktok_enabled: true
+  instagram_enabled: true
+  youtube_privacy: private
+  youtube_category_id: "22"
+  tags:
+    - tarih
+    - belgesel
+    - shorts
+  description_prefix: ""

@@ -1,0 +1,13 @@
+# Görsel / kamera / geçiş tercihleri (Faz 3 ile genişletilecek)
+visual:
+  default_aspect: "9:16"
+  palette: "dark_cinematic"
+  image_style_hints:
+    - "cinematic"
+    - "historical realism"
+    - "dramatic lighting"
+    - "fog and shadows"
+
+captions:
+  max_words_per_line: 4
+  max_lines: 2

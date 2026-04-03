@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import random
 import subprocess
 from pathlib import Path
 
@@ -32,6 +33,46 @@ def ffprobe_duration_seconds(media_path: Path, ffprobe_bin: str) -> float:
             f"ffprobe not found ({ffprobe_bin}). Install FFmpeg and set FFPROBE_PATH."
         ) from e
     return float(r.stdout.strip())
+
+
+def cut_background_clip(
+    *,
+    bg_video: Path,
+    output_mp4: Path,
+    duration_sec: float,
+    ffmpeg_bin: str,
+    ffprobe_bin: str,
+) -> None:
+    """Arka plan videosundan rastgele bir segment keser ve 1080x1920'ye ölçekler."""
+    bg_duration = ffprobe_duration_seconds(bg_video, ffprobe_bin)
+    max_start = max(0, bg_duration - duration_sec - 1)
+    start = random.uniform(0, max_start) if max_start > 0 else 0.0
+    output_mp4.parent.mkdir(parents=True, exist_ok=True)
+    vf = (
+        "scale=1080:1920:force_original_aspect_ratio=increase,"
+        "crop=1080:1920,"
+        f"fps={FPS}"
+    )
+    cmd = [
+        ffmpeg_bin,
+        "-y",
+        "-ss", f"{start:.3f}",
+        "-i", str(bg_video.resolve()),
+        "-t", f"{duration_sec:.3f}",
+        "-vf", vf,
+        "-an",
+        "-c:v", "libx264",
+        "-pix_fmt", "yuv420p",
+        str(output_mp4.resolve()),
+    ]
+    logger.info(
+        "ffmpeg background clip -> %s (start=%.1fs, dur=%.1fs)",
+        output_mp4.name, start, duration_sec,
+    )
+    try:
+        subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=600)
+    except subprocess.CalledProcessError as e:
+        raise MediaPipelineError(f"ffmpeg background clip failed: {e.stderr[:500]}") from e
 
 
 def _zoom_vf(motion: str, frames: int) -> str:
@@ -175,11 +216,11 @@ def mux_audio(
 def burn_subtitles(
     *,
     video_path: Path,
-    srt_path: Path,
+    subtitle_path: Path,
     output_mp4: Path,
     ffmpeg_bin: str,
 ) -> None:
-    s = srt_path.resolve().as_posix()
+    s = subtitle_path.resolve().as_posix()
     if s[1] == ":":
         s_esc = s.replace("\\", "/").replace(":", r"\\:")
     else:

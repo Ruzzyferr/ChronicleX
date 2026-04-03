@@ -12,13 +12,13 @@ from modules.scripting.scene_prompts import SCENES_SYSTEM, SCENES_USER_TEMPLATE
 
 logger = logging.getLogger(__name__)
 
-TARGET_TOTAL_MIN = 35.0
-TARGET_TOTAL_MAX = 55.0
-TARGET_TOTAL_IDEAL = 45.0
+TARGET_TOTAL_MIN = 40.0
+TARGET_TOTAL_MAX = 65.0
+TARGET_TOTAL_IDEAL = 50.0
 
 
 def _clamp_duration(d: float) -> float:
-    return max(3.0, min(6.0, float(d)))
+    return max(3.0, min(10.0, float(d)))
 
 
 def normalize_scenes(raw: list[Scene]) -> list[Scene]:

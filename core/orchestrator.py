@@ -7,6 +7,12 @@ from app.settings import Settings
 from core.enums import PipelinePhase
 from core.exceptions import ConfigError
 from core.models import PhaseResult, RunContext
+from core.production_paths import (
+    production_run_dir,
+    read_last_run_dir,
+    resolve_video_for_publish,
+    write_last_run_pointer,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +43,15 @@ def _should_run_phase(ctx: RunContext, phase: PipelinePhase) -> bool:
         return phase == PipelinePhase.RENDER
     if ctx.only_publish:
         return phase == PipelinePhase.PUBLISH
+    if (
+        phase == PipelinePhase.DISCOVERY
+        and ctx.topic_cli_override
+        and not ctx.only_discovery
+    ):
+        logger.info(
+            "Discovery atlandı: --topic ile sabit başlık verildi (novelty/DB adayı gerekmez)."
+        )
+        return False
     if phase == PipelinePhase.PUBLISH and not ctx.publish:
         return False
     return True
@@ -85,25 +100,38 @@ def _run_discovery_live(settings: Settings, ctx: RunContext) -> PhaseResult:
     )
 
 
-def _simulate_scripting(ctx: RunContext, output_base: Path) -> PhaseResult:
+def _simulate_scripting(settings: Settings, ctx: RunContext, output_base: Path) -> PhaseResult:
     script_path = output_base / "scripts" / "script.txt"
     paths = [str(script_path)]
     if ctx.dry_run:
         logger.info("[dry-run] Would write script to %s", script_path)
     else:
-        topic = ctx.effective_topic_name
-        script_path.parent.mkdir(parents=True, exist_ok=True)
-        script_path.write_text(
-            f"# Placeholder — Faz 3 render için en az 6 cümlelik anlatım; düzenleyebilirsiniz.\n\n"
-            f"{topic} konusu, az bilinen ama kaynaklarıyla desteklenen bir tarihsel olayı anlatır.\n"
-            f"Olayın geçtiği yer ve zaman dinleyiciyi sahnede hisseder.\n"
-            f"Ana figürlerin seçimi ve kararları sonucu şekillenir.\n"
-            f"Arşiv notları ve çağdaş tanıklıklar aynı hikâyeyi doğrular.\n"
-            f"Sonuç, günümüzde hâlâ tartışılan bir miras bırakır.\n"
-            f"Kısa biçimde güçlü bir açılış ve net bir kapanış hedeflenir.\n",
-            encoding="utf-8",
-        )
-        logger.info("Wrote placeholder script: %s", script_path)
+        key = (settings.openai_api_key or "").strip()
+        if key:
+            from modules.scripting.topic_narration import write_topic_script_and_scenes
+
+            write_topic_script_and_scenes(
+                topic=ctx.topic,
+                output_base=output_base,
+                api_key=key,
+                model=settings.openai_model,
+            )
+            paths.append(str(output_base / "scripts" / "topic_scenes.json"))
+            logger.info("OpenAI ile konu anlatımı ve sahne görselleri planı yazıldı.")
+        else:
+            topic = ctx.effective_topic_name
+            script_path.parent.mkdir(parents=True, exist_ok=True)
+            script_path.write_text(
+                f"# Placeholder — OPENAI_API_KEY yok. Metni elle yazın veya .env ekleyin.\n\n"
+                f"{topic} konusu, az bilinen ama kaynaklarıyla desteklenen bir tarihsel olayı anlatır.\n"
+                f"Olayın geçtiği yer ve zaman dinleyiciyi sahnede hisseder.\n"
+                f"Ana figürlerin seçimi ve kararları sonucu şekillenir.\n"
+                f"Arşiv notları ve çağdaş tanıklıklar aynı hikâyeyi doğrular.\n"
+                f"Sonuç, günümüzde hâlâ tartışılan bir miras bırakır.\n"
+                f"Kısa biçimde güçlü bir açılış ve net bir kapanış hedeflenir.\n",
+                encoding="utf-8",
+            )
+            logger.warning("OPENAI_API_KEY yok; placeholder script yazıldı: %s", script_path)
     return PhaseResult(phase=PipelinePhase.SCRIPTING.value, dry_run=ctx.dry_run, outputs=paths)
 
 
@@ -139,6 +167,7 @@ def _run_render_live(settings: Settings, ctx: RunContext, output_base: Path) -> 
         script=script,
         paths=paths,
         topic_id=topic_id,
+        resume=ctx.resume_render,
     )
     final = detail["manifest"]["final_video"]
     return PhaseResult(
@@ -149,7 +178,13 @@ def _run_render_live(settings: Settings, ctx: RunContext, output_base: Path) -> 
     )
 
 
-def _run_publish_phase(settings: Settings, ctx: RunContext, output_base: Path) -> PhaseResult:
+def _run_publish_phase(
+    settings: Settings,
+    ctx: RunContext,
+    output_base: Path,
+    *,
+    video_path: Path | None = None,
+) -> PhaseResult:
     from dataclasses import asdict
 
     from modules.analytics.service import log_publish_snapshot
@@ -158,7 +193,8 @@ def _run_publish_phase(settings: Settings, ctx: RunContext, output_base: Path) -
     from storage.repositories import published_videos as pv_repo
     from storage.repositories.topics import get_ready_topic
 
-    video_path = output_base / "video" / "final.mp4"
+    if video_path is None:
+        video_path = output_base / "video" / "final.mp4"
     results = publish_to_all_enabled_platforms(
         settings, ctx.topic, video_path, dry_run=ctx.dry_run
     )
@@ -192,12 +228,50 @@ def _run_publish_phase(settings: Settings, ctx: RunContext, output_base: Path) -
     )
 
 
+def _resolve_output_base(settings: Settings, ctx: RunContext) -> tuple[Path, Path, Path | None]:
+    """(artifacts_root, phase_output_base, publish_video_path_override)."""
+    artifacts_root = settings.resolved_output_dir()
+    publish_video: Path | None = None
+
+    if ctx.only_publish:
+        publish_video = resolve_video_for_publish(artifacts_root)
+        return artifacts_root, artifacts_root, publish_video
+
+    if (
+        ctx.only_render
+        and not ctx.dry_run
+        and ctx.resume_render
+        and settings.use_production_subfolders
+    ):
+        if ctx.from_output is not None:
+            run_dir = ctx.from_output.resolve()
+        else:
+            run_dir = read_last_run_dir(artifacts_root)
+        if run_dir is None or not run_dir.is_dir():
+            raise ConfigError(
+                "--resume-render: üretim klasörü yok. "
+                "Önce tam pipeline çalıştırın veya --from-output output/productions/<klasör> verin."
+            )
+        return artifacts_root, run_dir, None
+
+    if ctx.dry_run or not settings.use_production_subfolders:
+        return artifacts_root, artifacts_root, None
+
+    run_dir = production_run_dir(artifacts_root, ctx.effective_topic_name)
+    return artifacts_root, run_dir, None
+
+
 def run_pipeline(settings: Settings, ctx: RunContext) -> list[PhaseResult]:
-    output_base = settings.resolved_output_dir()
+    artifacts_root, output_base, publish_video_override = _resolve_output_base(settings, ctx)
     ensure_directories(ctx.project_root, output_base)
 
     log_file = output_base / "logs" / "app.log"
     _attach_file_handler(log_file)
+
+    if output_base != artifacts_root and not ctx.only_publish:
+        logger.info("Üretim klasörü: %s", output_base)
+    elif ctx.only_publish and publish_video_override:
+        logger.info("Yayın videosu: %s", publish_video_override)
 
     results: list[PhaseResult] = []
     phases_in_order = (
@@ -217,14 +291,24 @@ def run_pipeline(settings: Settings, ctx: RunContext) -> list[PhaseResult]:
             else:
                 results.append(_run_discovery_live(settings, ctx))
         elif phase == PipelinePhase.SCRIPTING:
-            results.append(_simulate_scripting(ctx, output_base))
+            results.append(_simulate_scripting(settings, ctx, output_base))
         elif phase == PipelinePhase.RENDER:
             if ctx.dry_run:
                 results.append(_simulate_render(ctx, output_base))
             else:
                 results.append(_run_render_live(settings, ctx, output_base))
+                if settings.use_production_subfolders and output_base != artifacts_root:
+                    write_last_run_pointer(artifacts_root, output_base)
+                    logger.info("Video ve varlıklar: %s", output_base / "video")
         elif phase == PipelinePhase.PUBLISH:
-            results.append(_run_publish_phase(settings, ctx, output_base))
+            results.append(
+                _run_publish_phase(
+                    settings,
+                    ctx,
+                    output_base,
+                    video_path=publish_video_override,
+                )
+            )
         logger.info("Phase end: %s", phase.value)
 
     return results

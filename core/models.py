@@ -43,6 +43,10 @@ class RunContext(BaseModel):
     only_script: bool
     only_render: bool
     only_publish: bool
+    resume_render: bool = False
+    from_output: Path | None = None
+    # True ise --topic ile başlık komut satırından verildi (tam pipeline’da keşif atlanır)
+    topic_cli_override: bool = False
 
     @property
     def effective_topic_name(self) -> str:

@@ -12,7 +12,7 @@ _MOTIONS = frozenset({"zoom_in", "zoom_out", "pan_left", "pan_right"})
 
 class Scene(BaseModel):
     scene_id: int = Field(ge=1, le=99)
-    duration: float = Field(ge=1.0, le=12.0)
+    duration: float = Field(ge=1.0, le=15.0)
     text: str = Field(min_length=1)
     image_prompt: str = Field(min_length=1)
     motion: MotionType = "zoom_in"
@@ -25,4 +25,5 @@ class Scene(BaseModel):
 
 
 class ScenesLLMResponse(BaseModel):
+    narration: str = ""
     scenes: list[Scene] = Field(default_factory=list)

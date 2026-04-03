@@ -15,7 +15,8 @@ logger = logging.getLogger(__name__)
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        description="Channel automation: topic → script → media → publish (CLI).",
+        description="ChronicleX: konu başlığı → keşif / script / video üretimi. "
+        "Yayın isteğe bağlı (--publish / --only-publish; varsayılan kapalı).",
     )
     p.add_argument(
         "--topic",
@@ -37,12 +38,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument(
         "--publish",
         action="store_true",
-        help="Pipeline sonunda yayın adımını çalıştır (üç platform, topic başlığı ortak)",
+        help="[Raf — isteğe bağlı] Pipeline sonunda yayın (YouTube/TikTok/IG); normal akışta kullanılmaz",
     )
     p.add_argument(
         "--ship",
         action="store_true",
-        help="--publish ile aynı: üretim + üç platforma gönderim (dry-run ile birlikte önizleme)",
+        help="--publish ile aynı (kısayol); normal akışta kullanılmaz",
     )
     p.add_argument(
         "--only-discovery",
@@ -60,9 +61,20 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Run only render/media phase (Faz 3)",
     )
     p.add_argument(
+        "--resume-render",
+        action="store_true",
+        help="Kaldığı yerden: son üretim klasöründe (veya --from-output) var olan sahne/görsel/sesi atla",
+    )
+    p.add_argument(
+        "--from-output",
+        type=str,
+        default=None,
+        help="Üretim kökü (ör. output/productions/2026-04-02_...); --resume-render ile birlikte",
+    )
+    p.add_argument(
         "--only-publish",
         action="store_true",
-        help="Run only publish phase (Faz 4)",
+        help="[Raf] Sadece yayın: son üretilen video (productions veya output/video)",
     )
     p.add_argument(
         "--init-db",
@@ -93,6 +105,9 @@ def run_with_args(
     if sum(1 for f in only_flags if f) > 1:
         raise ConfigError("Use at most one of --only-discovery, --only-script, --only-render, --only-publish")
 
+    if args.resume_render and not args.only_render:
+        raise ConfigError("--resume-render yalnızca --only-render ile kullanılır.")
+
     config_path = _resolve_path(project_root, args.config)
     topic = load_topic_config(config_path)
     if args.topic:
@@ -105,6 +120,10 @@ def run_with_args(
     else:
         logger.warning("styles.yaml not found at %s", styles_path)
 
+    from_output_path: Path | None = None
+    if args.from_output:
+        from_output_path = _resolve_path(project_root, args.from_output)
+
     ctx = RunContext(
         project_root=project_root,
         config_path=config_path,
@@ -115,6 +134,9 @@ def run_with_args(
         only_script=args.only_script,
         only_render=args.only_render,
         only_publish=args.only_publish,
+        resume_render=args.resume_render,
+        from_output=from_output_path,
+        topic_cli_override=bool(args.topic),
     )
 
     logger.info("Application start project_root=%s", project_root)

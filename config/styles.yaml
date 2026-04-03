@@ -11,3 +11,10 @@ visual:
 captions:
   max_words_per_line: 4
   max_lines: 2
+  font_name: "Arial Bold"
+  font_size: 52
+  primary_color: "&H00FFFFFF"    # beyaz (ASS BGR formatı)
+  outline_color: "&H00000000"    # siyah outline
+  outline_width: 4
+  shadow_depth: 2
+  alignment: 5                   # orta-merkez (TikTok tarzı)

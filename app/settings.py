@@ -36,6 +36,8 @@ class Settings(BaseSettings):
     tiktok_access_token: str | None = Field(default=None, alias="TIKTOK_ACCESS_TOKEN")
 
     output_dir: Path | None = Field(default=None, alias="OUTPUT_DIR")
+    # Gerçek üretimde output/productions/<tarih>__<konu>/ (dry-run ve only-publish hariç)
+    use_production_subfolders: bool = Field(default=True, alias="OUTPUT_USE_PRODUCTION_SUBFOLDERS")
     database_url: str = Field(default="", alias="DATABASE_URL")
     auto_create_db_schema: bool = Field(default=True, alias="AUTO_CREATE_DB_SCHEMA")
     openai_model: str = Field(default="gpt-4o-mini", alias="OPENAI_MODEL")
@@ -49,6 +51,7 @@ class Settings(BaseSettings):
         default="eleven_multilingual_v2",
         alias="ELEVENLABS_MODEL_ID",
     )
+    background_video_dir: str = Field(default="assets/backgrounds", alias="BACKGROUND_VIDEO_DIR")
     ffmpeg_path: str = Field(default="ffmpeg", alias="FFMPEG_PATH")
     ffprobe_path: str = Field(default="ffprobe", alias="FFPROBE_PATH")
     default_language: str = Field(default="tr", alias="DEFAULT_LANGUAGE")

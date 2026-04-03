@@ -20,6 +20,7 @@ def _ctx(**overrides) -> RunContext:
         only_script=False,
         only_render=False,
         only_publish=False,
+        topic_cli_override=False,
     )
     defaults.update(overrides)
     return RunContext(**defaults)
@@ -63,3 +64,15 @@ def test_publish_flag_enables_publish():
     ctx = _ctx(publish=True)
     assert _should_run_phase(ctx, PipelinePhase.PUBLISH) is True
     assert _should_run_phase(ctx, PipelinePhase.DISCOVERY) is True
+
+
+def test_cli_topic_skips_discovery_in_full_pipeline():
+    ctx = _ctx(topic_cli_override=True)
+    assert _should_run_phase(ctx, PipelinePhase.DISCOVERY) is False
+    assert _should_run_phase(ctx, PipelinePhase.SCRIPTING) is True
+
+
+def test_cli_topic_still_runs_discovery_when_only_discovery():
+    ctx = _ctx(topic_cli_override=True, only_discovery=True)
+    assert _should_run_phase(ctx, PipelinePhase.DISCOVERY) is True
+    assert _should_run_phase(ctx, PipelinePhase.SCRIPTING) is False

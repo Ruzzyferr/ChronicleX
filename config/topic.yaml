@@ -1,7 +1,7 @@
 topic_name: "Bilinmeyen şaşırtıcı tarihi gerçekler"
 language: "tr"
 tone: "karanlık, gizemli, sinematik, çarpıcı"
-video_duration_seconds: 45
+video_duration_seconds: 60
 
 content_rules:
   must_be_real: true
@@ -10,10 +10,11 @@ content_rules:
   minimum_verification_score: 7
   min_sources: 2
 
+# Yayın şu an rafa: otomasyon sadece üretim. Açmak için true yapın ve --publish / --only-publish kullanın.
 publishing:
-  youtube_enabled: true
-  tiktok_enabled: true
-  instagram_enabled: true
+  youtube_enabled: false
+  tiktok_enabled: false
+  instagram_enabled: false
   youtube_privacy: private
   youtube_category_id: "22"
   tags:

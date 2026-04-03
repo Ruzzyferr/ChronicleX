@@ -1,0 +1,6 @@
+file 'C:/Users/ruzzy/OneDrive/Masaüstü/ChronicleX/temp/scene_1.mp4'
+file 'C:/Users/ruzzy/OneDrive/Masaüstü/ChronicleX/temp/scene_2.mp4'
+file 'C:/Users/ruzzy/OneDrive/Masaüstü/ChronicleX/temp/scene_3.mp4'
+file 'C:/Users/ruzzy/OneDrive/Masaüstü/ChronicleX/temp/scene_4.mp4'
+file 'C:/Users/ruzzy/OneDrive/Masaüstü/ChronicleX/temp/scene_5.mp4'
+file 'C:/Users/ruzzy/OneDrive/Masaüstü/ChronicleX/temp/scene_6.mp4'

@@ -1,11 +1,11 @@
 # ChronicleX — Channel automation
 
-CLI-first pipeline: konu keşfi → script → medya (FFmpeg) → yayın.
+CLI-first pipeline: **konu başlığı** → keşif → script → medya (FFmpeg). Varsayılan akışta **otomatik yayın yok**; çıktı `output/productions/<tarih>__<konu-slug>/` altında toplanır ( `OUTPUT_USE_PRODUCTION_SUBFOLDERS`, dry-run’da düz `output/`).
 
 - **Faz 1:** yapılandırma, CLI, logging, orchestrator.
 - **Faz 2:** PostgreSQL üzerinde topic discovery (OpenAI), novelty, verification, kalıcı kayıt; `--only-discovery` ile çalışır. `--dry-run` discovery’de API/DB yazımı yapmaz.
-- **Faz 3:** OpenAI ile sahne planı, DALL·E görseller, ElevenLabs ses, SRT, FFmpeg ile dikey `output/video/final.mp4` + `manifest.json`. `--only-render` veya tam pipeline (dry-run kapalı). Gerekli: `OPENAI_API_KEY`, `ELEVENLABS_API_KEY` (veya `TTS_API_KEY`), sistemde **FFmpeg**.
-- **Faz 4:** YouTube, TikTok ve Instagram’a aynı `final.mp4` + `topic` başlığı ile koordineli yükleme; `config/topic.yaml` içindeki `publishing` bayrakları hangi platformların açık olduğunu belirler. Mevcut veritabanı için yeni sütunlar: `scripts/migration_faz4_publish_columns.sql`.
+- **Faz 3:** OpenAI ile sahne planı, DALL·E görseller, ElevenLabs ses, SRT, FFmpeg ile dikey `video/final.mp4` + `manifest.json` (üretim klasörünün içinde). `--only-render` veya tam pipeline (dry-run kapalı). Gerekli: `OPENAI_API_KEY`, `ELEVENLABS_API_KEY` (veya `TTS_API_KEY`), sistemde **FFmpeg**.
+- **Faz 4 (raf / isteğe bağlı):** YouTube, TikTok, Instagram yükleme kodu duruyor; `config/topic.yaml` `publishing` varsayılan kapalı. Açmak için bayrakları `true` yapıp `--publish` veya `--only-publish` kullanın. DB migration: `scripts/migration_faz4_publish_columns.sql`.
 
 ## Gereksinimler
 
@@ -126,24 +126,29 @@ python run.py --dry-run --only-script
 python run.py --dry-run --only-render
 python run.py --dry-run --only-publish
 
+# Render yarım kaldıysa: son üretim klasöründe sahne/görsel/ses varsa atla (scenes.json + render_cache)
+python run.py --only-render --resume-render
+# Belirli klasör:
+python run.py --only-render --resume-render --from-output output/productions/2026-04-02_123456__konu-slug
+
 # Publish fazını tam pipeline’a dahil et (--ship, --publish ile eşanlamlı)
 python run.py --dry-run --publish
 python run.py --dry-run --ship
 
-# Üç platforma tek başlık: sadece yayın (önce output/video/final.mp4 hazır olsun)
+# [Raf] Sadece yayın: son üretilen video (productions içinde en yeni final.mp4 veya output/video/)
 python run.py --dry-run --only-publish --topic "Videonun başlığı"
-# Gerçek yükleme: --dry-run yok ve .env’de DRY_RUN=false (credential’lar .env’de)
+# Gerçek yükleme: publishing.* true + credential’lar; DRY_RUN=false
 python run.py --only-publish --topic "Videonun başlığı"
 ```
 
-## Publish akışı
+## Yayın (isteğe bağlı)
 
-Üretim ile yayın ayrı katmanlardır. Tam pipeline’da publish için `--publish` veya `--ship` gerekir; `--only-publish` yalnızca yayın fazını çalıştırır. `--topic` ile verilen başlık üç platformda da ortak metadatada kullanılır. `DRY_RUN=true` veya `--dry-run` iken gerçek API yüklemesi yapılmaz (önizleme / log). Ortam değişkenleri: `.env.example` (YouTube OAuth, `TIKTOK_ACCESS_TOKEN`, Instagram Graph `INSTAGRAM_ACCESS_TOKEN` + `INSTAGRAM_ACCOUNT_ID`).
+Normal kullanımda pipeline yayını çalıştırmaz. `--publish` / `--ship` tam akışın sonuna yayın ekler; `--only-publish` en son videoyu arar. Ayrıntılar: `modules/publishers/`.
 
 ## Dry-run
 
 - `--dry-run` veya `.env` içinde `DRY_RUN=true`: dış servislere çağrı yapılmaz, dosya yazımı minimum/placeholder seviyededir.
-- Log çıktısı konsola ve `output/logs/app.log` dosyasına düşer (ilk çalıştırmada `output/` alt klasörleri oluşturulur).
+- Log çıktısı konsola ve çalışma klasöründeki `logs/app.log` dosyasına düşer (dry-run’da genelde `output/logs/`).
 
 ## Sık karşılaşılan hatalar
 

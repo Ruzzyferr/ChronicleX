@@ -108,16 +108,28 @@ def _simulate_scripting(settings: Settings, ctx: RunContext, output_base: Path) 
     else:
         key = (settings.openai_api_key or "").strip()
         if key:
-            from modules.scripting.topic_narration import write_topic_script_and_scenes
+            if ctx.search_movie:
+                from modules.scripting.movie_narration import write_movie_script_and_scenes
 
-            write_topic_script_and_scenes(
-                topic=ctx.topic,
-                output_base=output_base,
-                api_key=key,
-                model=settings.openai_model,
-            )
-            paths.append(str(output_base / "scripts" / "topic_scenes.json"))
-            logger.info("OpenAI ile konu anlatımı ve sahne görselleri planı yazıldı.")
+                write_movie_script_and_scenes(
+                    topic=ctx.topic,
+                    output_base=output_base,
+                    api_key=key,
+                    model=settings.openai_model,
+                )
+                paths.append(str(output_base / "scripts" / "topic_scenes.json"))
+                logger.info("Film özeti (spoiler'sız) script ve sahne planı yazıldı.")
+            else:
+                from modules.scripting.topic_narration import write_topic_script_and_scenes
+
+                write_topic_script_and_scenes(
+                    topic=ctx.topic,
+                    output_base=output_base,
+                    api_key=key,
+                    model=settings.openai_model,
+                )
+                paths.append(str(output_base / "scripts" / "topic_scenes.json"))
+                logger.info("OpenAI ile konu anlatımı ve sahne görselleri planı yazıldı.")
         else:
             topic = ctx.effective_topic_name
             script_path.parent.mkdir(parents=True, exist_ok=True)
@@ -167,6 +179,9 @@ def _run_render_live(settings: Settings, ctx: RunContext, output_base: Path) -> 
         script=script,
         paths=paths,
         topic_id=topic_id,
+        topic_name=ctx.effective_topic_name,
+        with_pics=ctx.with_pics,
+        search_movie=ctx.search_movie,
         resume=ctx.resume_render,
     )
     final = detail["manifest"]["final_video"]

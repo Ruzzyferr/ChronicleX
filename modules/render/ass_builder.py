@@ -122,3 +122,44 @@ def build_ass_for_scenes(
 
     output_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     logger.info("Wrote ASS (%s dialogue lines) -> %s", len(lines) - 1, output_path)
+
+
+def build_ass_from_whisper(words: list[dict], output_path: Path) -> None:
+    """Word timestamp list -> ASS subtitles (4+4 block style)."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    style = _load_caption_style()
+    lines: list[str] = [_ass_header(style)]
+
+    if not words:
+        output_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        logger.warning("Whisper words empty, wrote ASS header only: %s", output_path)
+        return
+
+    chunk_size = 8
+    for i in range(0, len(words), chunk_size):
+        chunk = words[i : i + chunk_size]
+        if not chunk:
+            continue
+        first = chunk[0]
+        last = chunk[-1]
+        try:
+            start = float(first["start"])
+            end = float(last["end"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if end <= start:
+            end = start + 0.2
+
+        first_line_words = [str(w.get("word", "")).strip() for w in chunk[:4]]
+        second_line_words = [str(w.get("word", "")).strip() for w in chunk[4:8]]
+        line1 = " ".join(w for w in first_line_words if w)
+        line2 = " ".join(w for w in second_line_words if w)
+        if not line1 and not line2:
+            continue
+        text = line1 if not line2 else f"{line1}\\N{line2}"
+        lines.append(
+            f"Dialogue: 0,{_fmt_ass_ts(start)},{_fmt_ass_ts(end)},Default,,0,0,0,,{text}"
+        )
+
+    output_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    logger.info("Wrote Whisper ASS (%s dialogue lines) -> %s", len(lines) - 1, output_path)

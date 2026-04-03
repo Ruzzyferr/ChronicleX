@@ -43,6 +43,8 @@ class RunContext(BaseModel):
     only_script: bool
     only_render: bool
     only_publish: bool
+    with_pics: bool = False
+    search_movie: bool = False
     resume_render: bool = False
     from_output: Path | None = None
     # True ise --topic ile başlık komut satırından verildi (tam pipeline’da keşif atlanır)

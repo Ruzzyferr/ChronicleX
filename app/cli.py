@@ -66,6 +66,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Kaldığı yerden: son üretim klasöründe (veya --from-output) var olan sahne/görsel/sesi atla",
     )
     p.add_argument(
+        "--withpics",
+        action="store_true",
+        help="Gameplay modunda Lexica'dan konu görselleri overlay ekle",
+    )
+    p.add_argument(
+        "--searchmovie",
+        action="store_true",
+        help="Film modu: YouTube'dan trailer indir, kesitlerden video oluştur, spoiler'sız film özeti anlat",
+    )
+    p.add_argument(
         "--from-output",
         type=str,
         default=None,
@@ -134,6 +144,8 @@ def run_with_args(
         only_script=args.only_script,
         only_render=args.only_render,
         only_publish=args.only_publish,
+        with_pics=args.withpics,
+        search_movie=args.searchmovie,
         resume_render=args.resume_render,
         from_output=from_output_path,
         topic_cli_override=bool(args.topic),

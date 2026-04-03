@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import random
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -13,16 +14,21 @@ from core.media_models import Scene
 from modules.render.ffmpeg_runner import (
     burn_subtitles,
     concat_clips,
+    cut_and_concat_trailer_clips,
     cut_background_clip,
     ffprobe_duration_seconds,
     mux_audio,
+    overlay_images_on_video,
     render_scene_clip,
     write_concat_list,
 )
-from modules.render.ass_builder import build_ass_for_scenes
+from modules.render.ass_builder import build_ass_for_scenes, build_ass_from_whisper
+from modules.render.whisper_align import transcribe_with_word_timestamps
 from modules.scripting.scene_generator import generate_scenes, normalize_scenes
 from modules.scripting.topic_narration import topic_scenes_json_path
 from modules.visuals.dalle import generate_image
+from modules.visuals.lexica import search_and_download
+from modules.visuals.trailer_dl import search_and_download_trailer
 from modules.voice.elevenlabs import generate_voice_mp3
 
 logger = logging.getLogger(__name__)
@@ -104,12 +110,45 @@ def _find_background_video(bg_dir: str) -> Path | None:
     return random.choice(videos)
 
 
+def _select_pic_scenes(scenes: list[Scene], count: int = 4) -> list[int]:
+    if not scenes:
+        return []
+    n = len(scenes)
+    k = max(1, min(count, n))
+    if k == 1:
+        return [0]
+    step = (n - 1) / (k - 1)
+    picked = {int(round(i * step)) for i in range(k)}
+    return sorted(picked)
+
+
+def _simple_lexica_query(scene: Scene, topic_name: str = "") -> str:
+    """Build a short keyword query for Lexica search endpoint.
+
+    Prefers image_prompt (English visual description) since Lexica indexes
+    English AI-generated art.  Falls back to scene text or topic name.
+    """
+    base = scene.image_prompt.strip() or scene.text.strip() or topic_name.strip()
+    cleaned = re.sub(r"[^\w\s-]", " ", base, flags=re.UNICODE)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    stop = {
+        "a", "an", "the", "of", "in", "on", "at", "to", "and", "or",
+        "with", "from", "for", "that", "this", "is", "are", "was",
+        "style", "illustration", "digital", "dramatic", "lighting",
+    }
+    words = [w for w in cleaned.split() if len(w) > 2 and w.lower() not in stop]
+    return " ".join(words[:6]) if words else "historical scene"
+
+
 def run_media_pipeline(
     settings: Settings,
     *,
     script: str,
     paths: MediaPaths,
     topic_id: int | None = None,
+    topic_name: str = "",
+    with_pics: bool = False,
+    search_movie: bool = False,
     resume: bool = False,
 ) -> dict[str, Any]:
     """Sahne → görsel → ses → SRT → FFmpeg → final.mp4. resume=True iken mevcut dosyalar atlanır."""
@@ -194,22 +233,79 @@ def run_media_pipeline(
     if audio_duration <= 0.5:
         raise MediaPipelineError("Audio duration too short or invalid.")
 
-    # ── 2. Altyazı oluştur ──
+    # ── 2. Altyazı oluştur (Whisper -> fallback) ──
     seg_times = allocate_scene_times(scenes, audio_duration)
     ass_path = paths.subtitles_dir / "subtitles.ass"
-    build_ass_for_scenes(scenes, seg_times, ass_path)
+    whisper_words = transcribe_with_word_timestamps(
+        voice_path,
+        api_key=(settings.openai_api_key or "").strip(),
+        language=(settings.default_language or "tr"),
+    )
+    if whisper_words:
+        build_ass_from_whisper(whisper_words, ass_path)
+    else:
+        build_ass_for_scenes(scenes, seg_times, ass_path)
 
     # ── 3. Video oluştur ──
     combined = render_cache / "combined.mp4"
     with_audio = render_cache / "with_audio.mp4"
     final_path = paths.video_dir / "final.mp4"
 
-    bg_video = _find_background_video(settings.background_video_dir)
-    use_background = bg_video is not None
+    image_key = (settings.image_api_key or settings.openai_api_key or "").strip()
+    bg_video = None if search_movie else _find_background_video(settings.background_video_dir)
+    video_mode = "movie" if search_movie else ("gameplay" if bg_video else "dalle")
 
+    with_pics_count = 0
     if resume and _usable(final_path, 10_000):
         logger.info("Resume: final.mp4 zaten var, yeniden üretilmedi.")
-    elif use_background:
+    elif search_movie:
+        # ── Film modu: trailer indir → kesitlerden video oluştur ──
+        logger.info("Film modu: trailer aranıyor...")
+        trailer_dir = paths.output_base / "trailer"
+        trailer_dir.mkdir(parents=True, exist_ok=True)
+        trailer_path = trailer_dir / "trailer.mp4"
+
+        if resume and _usable(trailer_path, _MIN_BYTES_MP4):
+            logger.info("Resume: trailer zaten indirilmiş.")
+        else:
+            dl_result = search_and_download_trailer(
+                topic=topic_name or "movie trailer",
+                output_dir=trailer_dir,
+            )
+            if dl_result is None:
+                raise MediaPipelineError(
+                    "YouTube'dan trailer indirilemedi. "
+                    "yt-dlp yüklü mü? (pip install yt-dlp)"
+                )
+            if dl_result != trailer_path:
+                import shutil
+                shutil.move(str(dl_result), str(trailer_path))
+
+        if not (resume and _usable(combined, _MIN_BYTES_MP4)):
+            cut_and_concat_trailer_clips(
+                trailer_path=trailer_path,
+                output_mp4=combined,
+                target_duration=audio_duration,
+                clip_length=5.0,
+                ffmpeg_bin=settings.ffmpeg_path,
+                ffprobe_bin=settings.ffprobe_path,
+            )
+
+        if not (resume and _usable(with_audio, _MIN_BYTES_MP4)):
+            mux_audio(
+                video_path=combined,
+                audio_path=voice_path,
+                output_mp4=with_audio,
+                ffmpeg_bin=settings.ffmpeg_path,
+            )
+
+        burn_subtitles(
+            video_path=with_audio,
+            subtitle_path=ass_path,
+            output_mp4=final_path,
+            ffmpeg_bin=settings.ffmpeg_path,
+        )
+    elif bg_video is not None:
         # ── Gameplay arka plan modu ──
         logger.info("Gameplay arka plan modu: %s", bg_video.name)
         if not (resume and _usable(combined, _MIN_BYTES_MP4)):
@@ -229,8 +325,64 @@ def run_media_pipeline(
                 ffmpeg_bin=settings.ffmpeg_path,
             )
 
+        overlay_source = with_audio
+        if with_pics:
+            selected_indexes = _select_pic_scenes(scenes, count=4)
+            image_entries: list[dict] = []
+            for idx in selected_indexes:
+                scene = scenes[idx]
+                start = float(sum(seg_times[:idx]))
+                end = float(start + seg_times[idx])
+                outp = paths.images_dir / f"overlay_scene_{scene.scene_id}.png"
+                if resume and _usable(outp, _MIN_BYTES_PNG):
+                    logger.info("Resume: withpics sahne %s gorseli atlandi.", scene.scene_id)
+                else:
+                    lexica_query = _simple_lexica_query(scene, topic_name)
+                    ok = search_and_download(lexica_query, outp)
+                    if not ok:
+                        if image_key:
+                            try:
+                                generate_image(
+                                    prompt=scene.image_prompt,
+                                    output_path=outp,
+                                    api_key=image_key,
+                                    model=settings.dalle_model,
+                                    size=settings.dalle_size,
+                                )
+                                ok = _usable(outp, _MIN_BYTES_PNG)
+                                if ok:
+                                    logger.info(
+                                        "withpics: Lexica basarisiz, DALL-E fallback kullanildi (scene=%s).",
+                                        scene.scene_id,
+                                    )
+                            except Exception as exc:
+                                logger.warning(
+                                    "withpics: DALL-E fallback da basarisiz (scene=%s): %s",
+                                    scene.scene_id,
+                                    exc,
+                                )
+                        if not ok:
+                            continue
+                image_entries.append({"path": outp, "start": start, "end": end})
+            if image_entries:
+                with_pics_count = len(image_entries)
+                with_pics_video = render_cache / "with_pics.mp4"
+                if resume and _usable(with_pics_video, _MIN_BYTES_MP4):
+                    logger.info("Resume: with_pics.mp4 zaten var, overlay atlandi.")
+                else:
+                    overlay_images_on_video(
+                        video_path=with_audio,
+                        image_entries=image_entries,
+                        output_mp4=with_pics_video,
+                        ffmpeg_bin=settings.ffmpeg_path,
+                    )
+                overlay_source = with_pics_video
+                logger.info("withpics: %s overlay görsel eklendi.", with_pics_count)
+            else:
+                logger.warning("withpics açık ama uygun görsel bulunamadı.")
+
         burn_subtitles(
-            video_path=with_audio,
+            video_path=overlay_source,
             subtitle_path=ass_path,
             output_mp4=final_path,
             ffmpeg_bin=settings.ffmpeg_path,
@@ -238,7 +390,6 @@ def run_media_pipeline(
     else:
         # ── Fallback: DALL·E görsel modu ──
         logger.info("DALL·E görsel modu (arka plan videosu bulunamadı).")
-        image_key = (settings.image_api_key or settings.openai_api_key or "").strip()
 
         image_paths: list[Path] = []
         for s in scenes:
@@ -307,7 +458,9 @@ def run_media_pipeline(
         "final_video": str(final_path.resolve()),
         "audio_path": str(voice_path.resolve()),
         "subtitles_path": str(ass_path.resolve()),
-        "background_mode": "gameplay" if use_background else "dalle",
+        "background_mode": video_mode,
+        "with_pics": with_pics,
+        "pic_count": with_pics_count,
         "scene_count": len(scenes),
         "audio_duration_sec": audio_duration,
         "resume_used": resume,

@@ -22,11 +22,20 @@ Yanıtın YALNIZCA geçerli JSON olsun (başka metin yok).
 ## ADIM 1: TAM ANLATIM METNİ (narration)
 - Önce "narration" alanına TAM, AKICI, KESİNTİSİZ bir anlatım metni yaz. Bu metin doğrudan seslendirilecek.
 - Bir hikaye anlatıyormuş gibi yaz — başı, ortası, sonu olan TEK BİR AKIŞ.
-- İlk cümle MUTLAKA güçlü bir hook olsun: izleyiciyi ilk saniyede yakalayan, şok edici veya merak uyandıran bir açılış.
+- İlk cümle MUTLAKA güçlü bir hook olsun: izleyiciyi ilk saniyede yakalayan, somut bir bilgiyle açılış.
 - Kısa, vurucu, ritmik cümleler — TikTok/Reels formatına uygun.
 - Her cümle bir öncekiyle BAĞLANTILI olsun. Geçiş kelimeleri kullan. Hikaye aksın.
-- Akış: çarpıcı hook → bağlam → kronoloji/olaylar → sonuç/miras → güçlü kapanış.
-- Kapanış da akılda kalıcı olsun — düşündüren veya şaşırtan bir son cümle.
+- Akış: somut olay/bilgi ile açılış → bağlam → kronoloji/olaylar → sonuç/miras → somut kapanış.
+
+## SOMUT BİLGİ KURALLARI (ÇOK ÖNEMLİ)
+- Her cümle somut bir bilgi, olay, kişi, tarih veya yer içermeli.
+- Felsefi ve metaforik cümleler KESINLIKLE YASAK. Örnekler:
+  YASAK: "Korkunun şeyi içimizde saklıdır", "Tarihin karanlık yüzüne bakmak", "İnsanlık bu soruyla yüzleşmek zorunda kaldı"
+  DOĞRU: "1893'te Londra'da yayımlanan bu hikâyede Holmes, Moriarty ile Reichenbach Şelalesi'nde karşı karşıya geldi."
+- "Rivayete göre" gibi belirsiz ifadeler yerine somut kaynak göster: tarih, yer, kişi adı, rakam.
+- İzleyici videoyu bitirdiğinde EN AZ 3 somut bilgi öğrenmiş olmalı.
+- "Biliyor muydunuz" tarzı ucuz hook'lar YASAK. Doğrudan olaya gir.
+- Kapanışta felsefe YAPMA. Son cümle de somut olsun — bir sonuç, bir rakam, bir gerçek.
 - Konuyu TEK somut odakta topla; doğrulanabilir, eğitici ama büyüleyici.
 
 ## ADIM 2: SAHNE BÖLME

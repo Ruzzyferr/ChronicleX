@@ -200,10 +200,13 @@ def _run_render_live(settings: Settings, ctx: RunContext, output_base: Path) -> 
     topic_id: int | None = None
     url = (settings.database_url or "").strip()
     if url:
-        with session_scope(url) as session:
-            row = get_ready_topic(session, ctx.effective_topic_name)
-            if row is not None:
-                topic_id = row.id
+        try:
+            with session_scope(url) as session:
+                row = get_ready_topic(session, ctx.effective_topic_name)
+                if row is not None:
+                    topic_id = row.id
+        except Exception as exc:
+            logger.warning("DB bağlantısı başarısız (render devam ediyor): %s", exc)
 
     detail = run_media_pipeline(
         settings,

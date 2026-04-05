@@ -51,8 +51,19 @@ Kullanıcıya TAM 3 konu önerisi ver. Her öneri:
 
 Her öneri farklı bir alandan olsun. Tekrar etme.
 
+## HOOK YAZIM KURALI (ÇOK ÖNEMLİ)
+Hook = videonun ilk cümlesi. Kısa, somut, şok edici bir GERÇEK olmalı.
+- Maksimum 15 kelime.
+- Soru sorma, doğrudan bilgiyi patlat.
+- DOĞRU: "Psikopatlarda esneme bulaşmaz."
+- DOĞRU: "Netflix yarım bıraktığın diziyi önce gösterir çünkü beyniniz yarım işleri unutamaz."
+- DOĞRU: "Apple her lansmanında sana 3 seçenek sunar ama ortadakini satın alman için tasarlanmıştır."
+- YANLIŞ: "Neden en az bilgiye sahip olanlar kendilerini en yetkin zanneder?" (soru sorma)
+- YANLIŞ: "Bu ilginç durum sosyal hayatı nasıl etkiliyor?" (soru sorma, belirsiz)
+- YANLIŞ: "Eğer birine ismini doğru söylersen onu etkileyebilirsin, bu bir manipülasyon değil mi?" (uzun, soru)
+
 Yanıtın YALNIZCA geçerli JSON olsun:
-{"suggestions": [{"title": "Kısa başlık", "hook": "Bu konuyla videonun ilk cümlesi ne olabilir — beyin yakıcı olmalı", "why_viral": "Neden viral olur — 1 cümle"}, ...]}"""
+{"suggestions": [{"title": "Kısa başlık", "hook": "Kısa, somut, şok edici bir gerçek cümlesi.", "why_viral": "Neden viral olur — 1 cümle"}, ...]}"""
 
 
 def suggest_psych_topics(*, api_key: str, model: str) -> list[dict[str, str]]:

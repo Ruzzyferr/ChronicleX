@@ -143,11 +143,13 @@ def crop_and_trim(
         return
 
     # ── Akıllı örnekleme: uzun videodan eşit aralıklı segmentler al ──
-    segments_needed = int(target_duration / segment_length)  # 60/10 = 6
-    total_segments = int(total_dur / segment_length)         # 180/10 = 18
+    # İlk ve son segment HER ZAMAN dahil (giriş + sonuç korunsun)
+    # Aradaki segmentler eşit aralıklı seçilir
+    segments_needed = max(2, int(target_duration / segment_length))  # 60/10 = 6
+    total_segments = int(total_dur / segment_length)                 # 180/10 = 18
+    last_seg = total_segments - 1
 
     if total_segments <= segments_needed:
-        # Yeterince segment yok, baştan kes
         cmd = [
             ffmpeg_bin, "-y",
             "-i", str(input_path),
@@ -162,15 +164,28 @@ def crop_and_trim(
         logger.info("Video kırpıldı: %.1fs, 9:16 format", target_duration)
         return
 
-    step = total_segments / segments_needed  # 18/6 = 3 → her 3 segmentten 1
-    pick_indexes = [int(round(i * step)) for i in range(segments_needed)]
-    # Duplicate'leri kaldır, sırala
-    pick_indexes = sorted(set(idx for idx in pick_indexes if idx < total_segments))
+    # İlk (0) ve son (last_seg) sabit, aradaki (segments_needed - 2) eşit dağıtılır
+    pick_indexes = [0]
+    middle_count = segments_needed - 2
+    if middle_count > 0 and last_seg > 1:
+        step = (last_seg - 1) / (middle_count + 1)
+        for i in range(1, middle_count + 1):
+            idx = int(round(i * step))
+            if idx not in (0, last_seg):
+                pick_indexes.append(idx)
+    pick_indexes.append(last_seg)
+    # Duplicate kaldır, sırala
+    pick_indexes = sorted(set(pick_indexes))
+
+    # Eksik segment varsa tamamlamak için son segmenti uzat
+    actual_count = len(pick_indexes)
+    deficit = target_duration - (actual_count * segment_length)
 
     logger.info(
-        "Akıllı örnekleme: %d segmentten %d tanesi seçildi (her %.0f segmentten 1)",
-        total_segments, len(pick_indexes), step,
+        "Akıllı örnekleme: %d segmentten %d tanesi seçildi (ilk + son sabit)",
+        total_segments, actual_count,
     )
+    logger.info("Seçilen segmentler: %s", pick_indexes)
 
     # Her segmenti kes
     temp_dir = output_path.parent / "_rescue_segments"
@@ -179,12 +194,17 @@ def crop_and_trim(
 
     for i, seg_idx in enumerate(pick_indexes):
         seg_start = seg_idx * segment_length
+        # Son segment: eksik süreyi tamamlamak için uzat
+        is_last = (i == actual_count - 1)
+        seg_dur = segment_length + deficit if is_last and deficit > 0 else segment_length
+        # Videonun sonunu aşmasın
+        seg_dur = min(seg_dur, total_dur - seg_start)
         seg_file = temp_dir / f"seg_{i:03d}.mp4"
         _cut_single_segment(
             input_path=input_path,
             output_path=seg_file,
             start=seg_start,
-            duration=segment_length,
+            duration=seg_dur,
             vf=vf,
             ffmpeg_bin=ffmpeg_bin,
         )

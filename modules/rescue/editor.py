@@ -204,7 +204,7 @@ def crop_and_trim(
 
     logger.info(
         "Akıllı örnekleme: %d segmentten %d tanesi seçildi (ilk + son sabit)",
-        total_segments, actual_count,
+        usable_segments, actual_count,
     )
     logger.info("Seçilen segmentler: %s", pick_indexes)
 

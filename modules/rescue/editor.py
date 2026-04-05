@@ -356,6 +356,52 @@ def add_text_overlay(
     logger.info("Text overlay eklendi: %s", text)
 
 
+def mix_hook_voice(
+    *,
+    input_path: Path,
+    hook_audio_path: Path,
+    output_path: Path,
+    ffmpeg_bin: str = "ffmpeg",
+    ffprobe_bin: str = "ffprobe",
+) -> None:
+    """Videonun başına hook voice mixle.
+
+    Hook voice çalarken orijinal ses kısılır (volume 0.15),
+    hook bitince orijinal ses normale döner (1.0).
+    Geçiş yumuşak (fade).
+    """
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    hook_dur = ffprobe_duration(hook_audio_path, ffprobe_bin)
+    if hook_dur <= 0:
+        raise MediaPipelineError("Hook ses dosyası geçersiz veya boş.")
+
+    # Orijinal ses: hook süresince kısık, sonra fade-in ile normale dön
+    # Hook ses: video başında çalar
+    # amix ile birleştir, orijinal sesi hook boyunca kıs
+    fade_dur = 0.5
+    af = (
+        f"[1:a]volume=1.0[hook];"
+        f"[0:a]volume=enable='between(t,0,{hook_dur})':volume=0.15,"
+        f"afade=t=in:st={hook_dur}:d={fade_dur}[orig];"
+        f"[orig][hook]amix=inputs=2:duration=longest:dropout_transition=0[aout]"
+    )
+
+    cmd = [
+        ffmpeg_bin, "-y",
+        "-i", str(input_path),
+        "-i", str(hook_audio_path),
+        "-filter_complex", af,
+        "-map", "0:v",
+        "-map", "[aout]",
+        "-c:v", "copy",
+        "-c:a", "aac", "-b:a", "192k",
+        "-movflags", "+faststart",
+        str(output_path),
+    ]
+    _run_ffmpeg(cmd, "mix_hook_voice")
+    logger.info("Hook voice mixlendi: %.1fs hook süresi", hook_dur)
+
+
 def generate_thumbnail(
     *,
     video_path: Path,

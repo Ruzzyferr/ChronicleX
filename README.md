@@ -126,6 +126,16 @@ python run.py --vaka "https://tr.wikipedia.org/wiki/Vaka_sayfasi"
 python run.py --searchmovie --topic "Inception"
 ```
 
+### Korku Filmi Trailer
+
+```bash
+# Interaktif: vizyondaki 3 korku filmi onerisi → birini sec → trailer indir + hook overlay
+python run.py --korku
+
+# Direkt film ver (secim ekrani atlanir)
+python run.py --korku --topic "Sinister"
+```
+
 ### Arama Kurtarma / Caught on Camera
 
 ```bash

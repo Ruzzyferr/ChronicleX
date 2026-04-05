@@ -46,6 +46,7 @@ class RunContext(BaseModel):
     with_pics: bool = False
     search_movie: bool = False
     psych: bool = False
+    korku: bool = False
     resume_render: bool = False
     from_output: Path | None = None
     vaka_url: str | None = None

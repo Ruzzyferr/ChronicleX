@@ -95,6 +95,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Arama kurtarma modu: YouTube URL → indir → 9:16 edit → dramatik yazı overlay → thumbnail",
     )
     p.add_argument(
+        "--korku",
+        action="store_true",
+        help="Korku filmi modu: vizyondaki 3 film önerisi → trailer indir → 9:16 edit → hook overlay",
+    )
+    p.add_argument(
         "--start",
         type=float,
         default=None,
@@ -154,9 +159,10 @@ def run_with_args(
         args.searchmovie,
         args.psych,
         bool(getattr(args, "rescue", None)),
+        args.korku,
     ]
     if sum(mode_flags) > 1:
-        raise ConfigError("--vaka, --searchmovie, --psych ve --rescue aynı anda kullanılamaz.")
+        raise ConfigError("--vaka, --searchmovie, --psych, --rescue ve --korku aynı anda kullanılamaz.")
 
     config_path = _resolve_path(project_root, args.config)
     topic = load_topic_config(config_path)
@@ -215,9 +221,10 @@ def run_with_args(
         with_pics=args.withpics,
         search_movie=args.searchmovie,
         psych=args.psych,
+        korku=args.korku,
         resume_render=args.resume_render,
         from_output=from_output_path,
-        topic_cli_override=bool(args.topic) or bool(getattr(args, "vaka", None)) or args.psych or bool(getattr(args, "rescue", None)),
+        topic_cli_override=bool(args.topic) or bool(getattr(args, "vaka", None)) or args.psych or bool(getattr(args, "rescue", None)) or args.korku,
         vaka_url=getattr(args, "vaka", None),
         rescue_url=getattr(args, "rescue", None),
         rescue_start=args.start,

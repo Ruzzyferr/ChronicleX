@@ -312,9 +312,13 @@ def _resolve_output_base(settings: Settings, ctx: RunContext) -> tuple[Path, Pat
 
 
 def run_pipeline(settings: Settings, ctx: RunContext) -> list[PhaseResult]:
-    # Rescue modu: normal pipeline atlanır, doğrudan rescue pipeline çağrılır
+    # Rescue modu: normal pipeline atlanır
     if ctx.rescue_url:
         return _run_rescue_mode(settings, ctx)
+
+    # Korku modu: normal pipeline atlanır
+    if ctx.korku:
+        return _run_horror_mode(settings, ctx)
 
     artifacts_root, output_base, publish_video_override = _resolve_output_base(settings, ctx)
     ensure_directories(ctx.project_root, output_base)
@@ -366,6 +370,45 @@ def run_pipeline(settings: Settings, ctx: RunContext) -> list[PhaseResult]:
         logger.info("Phase end: %s", phase.value)
 
     return results
+
+
+def _run_horror_mode(settings: Settings, ctx: RunContext) -> list[PhaseResult]:
+    """Korku filmi trailer modu: film seç → trailer indir → edit → hook → thumbnail."""
+    from modules.horror.pipeline import run_horror_pipeline
+
+    artifacts_root = settings.resolved_output_dir()
+    if settings.use_production_subfolders and not ctx.dry_run:
+        output_base = production_run_dir(artifacts_root, "korku-trailer")
+    else:
+        output_base = artifacts_root
+
+    ensure_directories(ctx.project_root, output_base)
+    log_file = output_base / "logs" / "app.log"
+    _attach_file_handler(log_file)
+    logger.info("Korku filmi trailer modu başlatılıyor.")
+
+    if ctx.dry_run:
+        logger.info("[dry-run] Horror pipeline simülasyonu.")
+        return [PhaseResult(phase="horror", dry_run=True, outputs=[])]
+
+    # --topic verilmişse direkt o filmle başla (interaktif seçim atlanır)
+    movie_title = ctx.topic.topic_name.strip() if ctx.topic.topic_name.strip() else None
+
+    detail = run_horror_pipeline(
+        settings=settings,
+        output_base=output_base,
+        movie_title=movie_title,
+    )
+
+    if settings.use_production_subfolders and output_base != artifacts_root:
+        write_last_run_pointer(artifacts_root, output_base)
+
+    return [PhaseResult(
+        phase="horror",
+        dry_run=False,
+        outputs=[detail.get("final_video", ""), detail.get("thumbnail", "")],
+        detail=detail,
+    )]
 
 
 def _run_rescue_mode(settings: Settings, ctx: RunContext) -> list[PhaseResult]:

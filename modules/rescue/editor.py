@@ -143,13 +143,15 @@ def crop_and_trim(
         return
 
     # ── Akıllı örnekleme: uzun videodan eşit aralıklı segmentler al ──
-    # İlk ve son segment HER ZAMAN dahil (giriş + sonuç korunsun)
-    # Aradaki segmentler eşit aralıklı seçilir
-    segments_needed = max(2, int(target_duration / segment_length))  # 60/10 = 6
-    total_segments = int(total_dur / segment_length)                 # 180/10 = 18
-    last_seg = total_segments - 1
+    # İlk ve son 10 saniyeyi atla (intro/outro), kullanılabilir aralıktan örnekle
+    # İlk segment = videonun 2. segmenti (10-20s), son segment = sondan 2. segment
+    skip = segment_length  # ilk ve son 10sn atlanır
+    usable_start = skip
+    usable_end = total_dur - skip
+    usable_dur = usable_end - usable_start
 
-    if total_segments <= segments_needed:
+    if usable_dur < target_duration:
+        # Video çok kısa, intro/outro atlama yapma, direkt kes
         cmd = [
             ffmpeg_bin, "-y",
             "-i", str(input_path),
@@ -164,17 +166,36 @@ def crop_and_trim(
         logger.info("Video kırpıldı: %.1fs, 9:16 format", target_duration)
         return
 
-    # İlk (0) ve son (last_seg) sabit, aradaki (segments_needed - 2) eşit dağıtılır
+    segments_needed = max(2, int(target_duration / segment_length))  # 60/10 = 6
+    usable_segments = int(usable_dur / segment_length)               # (180-20)/10 = 16
+
+    if usable_segments <= segments_needed:
+        cmd = [
+            ffmpeg_bin, "-y",
+            "-ss", f"{usable_start:.2f}",
+            "-i", str(input_path),
+            "-t", f"{target_duration:.2f}",
+            "-vf", vf,
+            "-c:v", "libx264", "-preset", "fast", "-crf", "20",
+            "-c:a", "aac", "-b:a", "192k",
+            "-movflags", "+faststart",
+            str(output_path),
+        ]
+        _run_ffmpeg(cmd, "crop_and_trim_simple")
+        logger.info("Video kırpıldı: %.1fs, 9:16 format", target_duration)
+        return
+
+    # İlk (0) ve son (usable_segments-1) sabit, aradaki eşit dağıtılır
+    last_usable = usable_segments - 1
     pick_indexes = [0]
     middle_count = segments_needed - 2
-    if middle_count > 0 and last_seg > 1:
-        step = (last_seg - 1) / (middle_count + 1)
+    if middle_count > 0 and last_usable > 1:
+        step = (last_usable - 1) / (middle_count + 1)
         for i in range(1, middle_count + 1):
             idx = int(round(i * step))
-            if idx not in (0, last_seg):
+            if idx not in (0, last_usable):
                 pick_indexes.append(idx)
-    pick_indexes.append(last_seg)
-    # Duplicate kaldır, sırala
+    pick_indexes.append(last_usable)
     pick_indexes = sorted(set(pick_indexes))
 
     # Eksik segment varsa tamamlamak için son segmenti uzat
@@ -193,7 +214,7 @@ def crop_and_trim(
     segment_files: list[Path] = []
 
     for i, seg_idx in enumerate(pick_indexes):
-        seg_start = seg_idx * segment_length
+        seg_start = usable_start + (seg_idx * segment_length)
         # Son segment: eksik süreyi tamamlamak için uzat
         is_last = (i == actual_count - 1)
         seg_dur = segment_length + deficit if is_last and deficit > 0 else segment_length

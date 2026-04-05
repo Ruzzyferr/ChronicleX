@@ -20,8 +20,12 @@ def run_rescue_pipeline(
     settings: Settings,
     url: str,
     output_base: Path,
+    start_sec: float | None = None,
+    end_sec: float | None = None,
 ) -> dict[str, Any]:
     """Rescue pipeline: YouTube → indir → edit → overlay → thumbnail.
+
+    start_sec/end_sec: Compilation videolardan belirli bir segment seçmek için.
 
     Returns:
         Manifest dict with final_video, thumbnail, title etc.
@@ -60,6 +64,8 @@ def run_rescue_pipeline(
         input_path=meta.video_path,
         output_path=cropped_path,
         target_duration=59.0,
+        start_sec=start_sec,
+        end_sec=end_sec,
         ffmpeg_bin=settings.ffmpeg_path,
         ffprobe_bin=settings.ffprobe_path,
     )

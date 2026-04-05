@@ -95,6 +95,18 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Arama kurtarma modu: YouTube URL → indir → 9:16 edit → dramatik yazı overlay → thumbnail",
     )
     p.add_argument(
+        "--start",
+        type=float,
+        default=None,
+        help="Rescue modu: videonun başlangıç saniyesi (compilation videolarda klip seçimi)",
+    )
+    p.add_argument(
+        "--end",
+        type=float,
+        default=None,
+        help="Rescue modu: videonun bitiş saniyesi (compilation videolarda klip seçimi)",
+    )
+    p.add_argument(
         "--from-output",
         type=str,
         default=None,
@@ -175,6 +187,10 @@ def run_with_args(
         if not args.topic:
             topic = topic.model_copy(update={"topic_name": "Rescue"})
 
+    # --start/--end sadece --rescue ile kullanılabilir
+    if (args.start is not None or args.end is not None) and not getattr(args, "rescue", None):
+        raise ConfigError("--start ve --end sadece --rescue ile kullanılabilir.")
+
     styles_path = project_root / "config" / "styles.yaml"
     if styles_path.is_file():
         styles = load_styles(styles_path)
@@ -204,6 +220,8 @@ def run_with_args(
         topic_cli_override=bool(args.topic) or bool(getattr(args, "vaka", None)) or args.psych or bool(getattr(args, "rescue", None)),
         vaka_url=getattr(args, "vaka", None),
         rescue_url=getattr(args, "rescue", None),
+        rescue_start=args.start,
+        rescue_end=args.end,
     )
 
     logger.info("Application start project_root=%s", project_root)

@@ -388,6 +388,8 @@ def _run_rescue_mode(settings: Settings, ctx: RunContext) -> list[PhaseResult]:
         settings=settings,
         url=ctx.rescue_url,
         output_base=output_base,
+        start_sec=ctx.rescue_start,
+        end_sec=ctx.rescue_end,
     )
 
     if settings.use_production_subfolders and output_base != artifacts_root:

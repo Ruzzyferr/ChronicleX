@@ -44,13 +44,15 @@ def crop_and_trim(
     input_path: Path,
     output_path: Path,
     target_duration: float = 59.0,
+    start_sec: float | None = None,
+    end_sec: float | None = None,
     ffmpeg_bin: str = "ffmpeg",
     ffprobe_bin: str = "ffprobe",
 ) -> None:
     """Videoyu 9:16 crop + hedef süreye kes. Orijinal ses korunur.
 
-    Videonun ortasından en heyecanlı kısmı almak için ilk %10'u atlar
-    (genellikle intro/logo kısmı), ortadan başlar.
+    start_sec/end_sec verilirse o aralığı kullanır (compilation videolar için).
+    Verilmezse videonun ilk %10'unu atlayıp ortadan başlar.
     """
     output_path.parent.mkdir(parents=True, exist_ok=True)
     total_dur = ffprobe_duration(input_path, ffprobe_bin)
@@ -58,15 +60,26 @@ def crop_and_trim(
     if total_dur <= 0:
         raise MediaPipelineError(f"Video süresi alınamadı: {input_path}")
 
-    # Başlangıç noktası: videonun %10'undan sonra başla (intro atla)
-    start_offset = min(total_dur * 0.1, 10.0)  # max 10 sn atla
-    available = total_dur - start_offset
-    actual_duration = min(target_duration, available)
+    if start_sec is not None or end_sec is not None:
+        # Manuel segment seçimi (compilation videolar için)
+        start_offset = max(0.0, start_sec or 0.0)
+        clip_end = min(end_sec or total_dur, total_dur)
+        actual_duration = min(clip_end - start_offset, target_duration)
+        if actual_duration < 5:
+            raise MediaPipelineError(
+                f"Seçilen segment çok kısa: {actual_duration:.1f}s "
+                f"(start={start_offset}, end={clip_end})"
+            )
+        logger.info("Manuel segment: %.1fs - %.1fs (%.1fs)", start_offset, clip_end, actual_duration)
+    else:
+        # Otomatik: ilk %10'u atla (intro/logo)
+        start_offset = min(total_dur * 0.1, 10.0)
+        available = total_dur - start_offset
+        actual_duration = min(target_duration, available)
 
-    if actual_duration < 10:
-        # Video çok kısaysa, baştan başla
-        start_offset = 0
-        actual_duration = min(target_duration, total_dur)
+        if actual_duration < 10:
+            start_offset = 0
+            actual_duration = min(target_duration, total_dur)
 
     # 9:16 crop filtresi: ortadan kırp
     vf = (

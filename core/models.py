@@ -50,6 +50,8 @@ class RunContext(BaseModel):
     from_output: Path | None = None
     vaka_url: str | None = None
     rescue_url: str | None = None
+    rescue_start: float | None = None
+    rescue_end: float | None = None
     # True ise --topic ile başlık komut satırından verildi (tam pipeline’da keşif atlanır)
     topic_cli_override: bool = False
 

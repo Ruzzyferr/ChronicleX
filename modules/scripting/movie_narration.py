@@ -36,6 +36,12 @@ KURALLAR:
   DOĞRU: "Masanın üstünde duran zarfı açtığında içinden kendi fotoğrafı çıktı. Bu fotoğrafı kim çekmiş olabilirdi?"
 - Soruları filmdeki GERÇEK bir sahneye/olaya dayandır. Uydurma değil.
 - "Bu filmde neler olacağını öğrenmek için izlemelisiniz" tarzında ucuz CTA YASAK.
+- Anlatımın başında veya ortasında, filmden DİKKAT ÇEKİCİ bir sahne detayı ver.
+  İzleyiciyi o anın içine sok — sanki o sahneyi yaşıyormuş gibi hissettir.
+  YASAK: Genel gerilim cümleleri ("korkunç bir şey oldu", "beklenmedik bir olay yaşandı")
+  DOĞRU: "Otopsiyi yapıyorsun, her şey temiz görünüyor — ama birden cesedin ağzından böcekler çıkmaya başlıyor."
+  DOĞRU: "Aynaya bakıyorsun ama yansımandaki sen, senin yaptığını yapmıyor."
+  Bu detay filmdeki GERÇEK bir sahneye dayanmalı, uydurma olmamalı.
 - Arkadaş ortamında film anlatan biri gibi yaz: doğal, akıcı, heyecanlı.
 - Kısa, vurucu cümleler — TikTok formatı.
 - "Biliyor muydunuz" tarzı ucuz hook YASAK. Doğrudan sahneye gir.

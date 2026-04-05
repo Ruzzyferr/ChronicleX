@@ -16,7 +16,9 @@ from modules.render.ffmpeg_runner import (
     concat_clips,
     cut_and_concat_trailer_clips,
     cut_background_clip,
+    enforce_max_duration,
     ffprobe_duration_seconds,
+    mix_ambient_audio,
     mux_audio,
     overlay_images_on_video,
     render_scene_clip,
@@ -110,6 +112,21 @@ def _find_background_video(bg_dir: str) -> Path | None:
     return random.choice(videos)
 
 
+def _find_ambient_audio(ambient_dir: str) -> Path | None:
+    """assets/ambient/ klasöründen rastgele bir ses dosyası seç."""
+    ambient_path = project_root() / ambient_dir
+    if not ambient_path.is_dir():
+        return None
+    sounds = (
+        list(ambient_path.glob("*.mp3"))
+        + list(ambient_path.glob("*.wav"))
+        + list(ambient_path.glob("*.ogg"))
+    )
+    if not sounds:
+        return None
+    return random.choice(sounds)
+
+
 def _select_pic_scenes(scenes: list[Scene], count: int = 4) -> list[int]:
     if not scenes:
         return []
@@ -150,6 +167,7 @@ def run_media_pipeline(
     with_pics: bool = False,
     search_movie: bool = False,
     resume: bool = False,
+    use_ambient: bool = False,
 ) -> dict[str, Any]:
     """Sahne → görsel → ses → SRT → FFmpeg → final.mp4. resume=True iken mevcut dosyalar atlanır."""
     scenes_path = _scenes_json_path(paths.output_base)
@@ -229,15 +247,47 @@ def run_media_pipeline(
         if not _usable(voice_path, _MIN_BYTES_MP3):
             raise MediaPipelineError("Voice file missing or empty.")
 
+    # 60 saniye hard cap — TTS aşarsa atempo ile hızlandır
+    voice_capped = paths.audio_dir / "voice_capped.mp3"
+    voice_path = enforce_max_duration(
+        audio_path=voice_path,
+        output_path=voice_capped,
+        ffmpeg_bin=settings.ffmpeg_path,
+        ffprobe_bin=settings.ffprobe_path,
+    )
+
+    # Whisper transkripti temiz ses üzerinden yap (ambient mix öncesi)
+    clean_voice_path = voice_path
+
+    # ── 1b. Ambient ses karıştır (isteğe bağlı) ──
+    if use_ambient:
+        ambient = _find_ambient_audio(settings.ambient_audio_dir)
+        if ambient:
+            voice_with_ambient = paths.audio_dir / "voice_with_ambient.aac"
+            if resume and _usable(voice_with_ambient, _MIN_BYTES_MP3):
+                logger.info("Resume: ambient mix atlandı.")
+            else:
+                mix_ambient_audio(
+                    voice_path=voice_path,
+                    ambient_path=ambient,
+                    output_path=voice_with_ambient,
+                    ffmpeg_bin=settings.ffmpeg_path,
+                    ffprobe_bin=settings.ffprobe_path,
+                )
+            voice_path = voice_with_ambient
+        else:
+            logger.info("Ambient klasörü boş veya yok; ambient ses atlandı.")
+
     audio_duration = ffprobe_duration_seconds(voice_path, settings.ffprobe_path)
     if audio_duration <= 0.5:
         raise MediaPipelineError("Audio duration too short or invalid.")
 
     # ── 2. Altyazı oluştur (Whisper -> fallback) ──
+    # Whisper temiz ses dosyasını kullanır (ambient karışmadan), senkron daha doğru olur
     seg_times = allocate_scene_times(scenes, audio_duration)
     ass_path = paths.subtitles_dir / "subtitles.ass"
     whisper_words = transcribe_with_word_timestamps(
-        voice_path,
+        clean_voice_path,
         api_key=(settings.openai_api_key or "").strip(),
         language=(settings.default_language or "tr"),
     )
@@ -297,6 +347,7 @@ def run_media_pipeline(
                 audio_path=voice_path,
                 output_mp4=with_audio,
                 ffmpeg_bin=settings.ffmpeg_path,
+                ffprobe_bin=settings.ffprobe_path,
             )
 
         burn_subtitles(
@@ -312,7 +363,7 @@ def run_media_pipeline(
             cut_background_clip(
                 bg_video=bg_video,
                 output_mp4=combined,
-                duration_sec=audio_duration,
+                duration_sec=audio_duration + 1.0,
                 ffmpeg_bin=settings.ffmpeg_path,
                 ffprobe_bin=settings.ffprobe_path,
             )
@@ -323,6 +374,7 @@ def run_media_pipeline(
                 audio_path=voice_path,
                 output_mp4=with_audio,
                 ffmpeg_bin=settings.ffmpeg_path,
+                ffprobe_bin=settings.ffprobe_path,
             )
 
         overlay_source = with_audio
@@ -444,6 +496,7 @@ def run_media_pipeline(
                 audio_path=voice_path,
                 output_mp4=with_audio,
                 ffmpeg_bin=settings.ffmpeg_path,
+                ffprobe_bin=settings.ffprobe_path,
             )
 
         burn_subtitles(

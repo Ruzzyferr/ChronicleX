@@ -76,6 +76,25 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Film modu: YouTube'dan trailer indir, kesitlerden video oluştur, spoiler'sız film özeti anlat",
     )
     p.add_argument(
+        "--vaka",
+        type=str,
+        default=None,
+        metavar="URL",
+        help="Vaka modu: URL'den gerçek suç vakası çekip dedektif tarzı ~60 saniyelik Türkçe video üret",
+    )
+    p.add_argument(
+        "--psych",
+        action="store_true",
+        help="Psikoloji / Dark Psychology modu: 3 konu önerisi → seçim → script → video",
+    )
+    p.add_argument(
+        "--rescue",
+        type=str,
+        default=None,
+        metavar="URL",
+        help="Arama kurtarma modu: YouTube URL → indir → 9:16 edit → dramatik yazı overlay → thumbnail",
+    )
+    p.add_argument(
         "--from-output",
         type=str,
         default=None,
@@ -118,10 +137,43 @@ def run_with_args(
     if args.resume_render and not args.only_render:
         raise ConfigError("--resume-render yalnızca --only-render ile kullanılır.")
 
+    mode_flags = [
+        bool(getattr(args, "vaka", None)),
+        args.searchmovie,
+        args.psych,
+        bool(getattr(args, "rescue", None)),
+    ]
+    if sum(mode_flags) > 1:
+        raise ConfigError("--vaka, --searchmovie, --psych ve --rescue aynı anda kullanılamaz.")
+
     config_path = _resolve_path(project_root, args.config)
     topic = load_topic_config(config_path)
     if args.topic:
         topic = topic.model_copy(update={"topic_name": args.topic})
+
+    # --vaka: topic adı verilmediyse URL path'inden türet, süreyi 60s'ye ayarla
+    if getattr(args, "vaka", None):
+        if not args.topic:
+            from urllib.parse import urlparse
+            path_slug = urlparse(args.vaka).path.rstrip("/").split("/")[-1]
+            derived_name = path_slug.replace("-", " ").replace("_", " ").title() or "Vaka"
+            topic = topic.model_copy(update={"topic_name": derived_name})
+        topic = topic.model_copy(update={"video_duration_seconds": 60})
+
+    # --psych: interaktif konu seçimi (scripting fazında yapılacak), süreyi 60s'ye ayarla
+    if args.psych:
+        topic = topic.model_copy(update={
+            "video_duration_seconds": 60,
+            "tone": "güvenilir, bilgili, biraz tehlikeli, dark psychology",
+        })
+        if not args.topic:
+            topic = topic.model_copy(update={"topic_name": ""})
+
+    # --rescue: süre ve topic ayarla
+    if getattr(args, "rescue", None):
+        topic = topic.model_copy(update={"video_duration_seconds": 60})
+        if not args.topic:
+            topic = topic.model_copy(update={"topic_name": "Rescue"})
 
     styles_path = project_root / "config" / "styles.yaml"
     if styles_path.is_file():
@@ -146,9 +198,12 @@ def run_with_args(
         only_publish=args.only_publish,
         with_pics=args.withpics,
         search_movie=args.searchmovie,
+        psych=args.psych,
         resume_render=args.resume_render,
         from_output=from_output_path,
-        topic_cli_override=bool(args.topic),
+        topic_cli_override=bool(args.topic) or bool(getattr(args, "vaka", None)) or args.psych or bool(getattr(args, "rescue", None)),
+        vaka_url=getattr(args, "vaka", None),
+        rescue_url=getattr(args, "rescue", None),
     )
 
     logger.info("Application start project_root=%s", project_root)

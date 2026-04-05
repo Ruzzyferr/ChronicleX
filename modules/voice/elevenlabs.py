@@ -36,9 +36,9 @@ def generate_voice_mp3(
         "text": text,
         "model_id": model_id,
         "voice_settings": {
-            "stability": 0.55,
-            "similarity_boost": 0.75,
-            "style": 0.2,
+            "stability": 0.70,
+            "similarity_boost": 0.80,
+            "style": 0.05,
             "use_speaker_boost": True,
         },
     }

@@ -45,8 +45,11 @@ class RunContext(BaseModel):
     only_publish: bool
     with_pics: bool = False
     search_movie: bool = False
+    psych: bool = False
     resume_render: bool = False
     from_output: Path | None = None
+    vaka_url: str | None = None
+    rescue_url: str | None = None
     # True ise --topic ile başlık komut satırından verildi (tam pipeline’da keşif atlanır)
     topic_cli_override: bool = False
 

@@ -108,7 +108,38 @@ def _simulate_scripting(settings: Settings, ctx: RunContext, output_base: Path) 
     else:
         key = (settings.openai_api_key or "").strip()
         if key:
-            if ctx.search_movie:
+            if ctx.psych:
+                from modules.scripting.psych_narration import (
+                    interactive_topic_select,
+                    write_psych_script_and_scenes,
+                )
+
+                # Interaktif konu seçimi (--topic verilmediyse)
+                if not ctx.topic.topic_name.strip():
+                    selected_topic = interactive_topic_select(api_key=key, model=settings.openai_model)
+                    ctx.topic = ctx.topic.model_copy(update={"topic_name": selected_topic})
+
+                write_psych_script_and_scenes(
+                    topic=ctx.topic,
+                    output_base=output_base,
+                    api_key=key,
+                    model=settings.openai_model,
+                )
+                paths.append(str(output_base / "scripts" / "topic_scenes.json"))
+                logger.info("Psikoloji / Dark Psychology senaryosu yazıldı.")
+            elif ctx.vaka_url:
+                from modules.scripting.vaka_narration import write_vaka_script_and_scenes
+
+                write_vaka_script_and_scenes(
+                    topic=ctx.topic,
+                    output_base=output_base,
+                    api_key=key,
+                    model=settings.openai_model,
+                    vaka_url=ctx.vaka_url,
+                )
+                paths.append(str(output_base / "scripts" / "topic_scenes.json"))
+                logger.info("Vaka senaryosu (dedektif tarzı) yazıldı.")
+            elif ctx.search_movie:
                 from modules.scripting.movie_narration import write_movie_script_and_scenes
 
                 write_movie_script_and_scenes(
@@ -183,6 +214,7 @@ def _run_render_live(settings: Settings, ctx: RunContext, output_base: Path) -> 
         with_pics=ctx.with_pics,
         search_movie=ctx.search_movie,
         resume=ctx.resume_render,
+        use_ambient=ctx.search_movie or bool(ctx.vaka_url),
     )
     final = detail["manifest"]["final_video"]
     return PhaseResult(
@@ -277,6 +309,10 @@ def _resolve_output_base(settings: Settings, ctx: RunContext) -> tuple[Path, Pat
 
 
 def run_pipeline(settings: Settings, ctx: RunContext) -> list[PhaseResult]:
+    # Rescue modu: normal pipeline atlanır, doğrudan rescue pipeline çağrılır
+    if ctx.rescue_url:
+        return _run_rescue_mode(settings, ctx)
+
     artifacts_root, output_base, publish_video_override = _resolve_output_base(settings, ctx)
     ensure_directories(ctx.project_root, output_base)
 
@@ -327,6 +363,42 @@ def run_pipeline(settings: Settings, ctx: RunContext) -> list[PhaseResult]:
         logger.info("Phase end: %s", phase.value)
 
     return results
+
+
+def _run_rescue_mode(settings: Settings, ctx: RunContext) -> list[PhaseResult]:
+    """Rescue modu: YouTube → indir → edit → overlay → thumbnail."""
+    from modules.rescue.pipeline import run_rescue_pipeline
+
+    artifacts_root = settings.resolved_output_dir()
+    if settings.use_production_subfolders and not ctx.dry_run:
+        output_base = production_run_dir(artifacts_root, ctx.effective_topic_name)
+    else:
+        output_base = artifacts_root
+
+    ensure_directories(ctx.project_root, output_base)
+    log_file = output_base / "logs" / "app.log"
+    _attach_file_handler(log_file)
+    logger.info("Rescue modu başlatılıyor: %s", ctx.rescue_url)
+
+    if ctx.dry_run:
+        logger.info("[dry-run] Rescue pipeline simülasyonu.")
+        return [PhaseResult(phase="rescue", dry_run=True, outputs=[])]
+
+    detail = run_rescue_pipeline(
+        settings=settings,
+        url=ctx.rescue_url,
+        output_base=output_base,
+    )
+
+    if settings.use_production_subfolders and output_base != artifacts_root:
+        write_last_run_pointer(artifacts_root, output_base)
+
+    return [PhaseResult(
+        phase="rescue",
+        dry_run=False,
+        outputs=[detail.get("final_video", ""), detail.get("thumbnail", "")],
+        detail=detail,
+    )]
 
 
 _file_handler_added = False

@@ -1,14 +1,33 @@
+# Environment & secrets
 .env
-# TikTok URL verification download (sadece yerel; asıl dosya Ruzzyferr.github.io reposunda)
-tiktokp*.txt
-.claude/
+
+# Python
 .venv/
 venv/
 __pycache__/
 *.py[cod]
 .pytest_cache/
 .mypy_cache/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Claude Code
+.claude/
+
+# Output & temp (runtime generated)
 output/
+temp/
+
+# Media assets (too large for git)
 assets/backgrounds/*.mp4
 assets/backgrounds/*.mkv
 assets/backgrounds/*.mov
+assets/ambient/
+*.mp4
+
+# Platform verification files
+tiktokp*.txt

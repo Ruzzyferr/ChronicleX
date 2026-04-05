@@ -11,6 +11,60 @@ from core.media_models import Scene
 logger = logging.getLogger(__name__)
 
 FPS = 30
+MAX_DURATION_SEC = 60.0
+
+
+def _blur_bg_filter() -> str:
+    """9:16 blur background filter: orijinal video ortada, bulanık arka plan."""
+    return (
+        "[0:v]split=2[bg][fg];"
+        "[bg]scale=1080:1920:force_original_aspect_ratio=increase,"
+        "crop=1080:1920,boxblur=20:5[blurred];"
+        "[fg]scale=1080:-2:force_original_aspect_ratio=decrease[scaled];"
+        f"[blurred][scaled]overlay=(W-w)/2:(H-h)/2,fps={FPS}[out]"
+    )
+
+
+def enforce_max_duration(
+    *,
+    audio_path: Path,
+    output_path: Path,
+    max_seconds: float = MAX_DURATION_SEC,
+    ffmpeg_bin: str,
+    ffprobe_bin: str = "ffprobe",
+) -> Path:
+    """Ses süresi max_seconds'u aşarsa atempo ile hızlandırır.
+
+    Orijinal dosya aşmıyorsa dokunmaz, aynı path'i döner.
+    Aşıyorsa output_path'e hızlandırılmış dosyayı yazar.
+    """
+    dur = ffprobe_duration_seconds(audio_path, ffprobe_bin)
+    if dur <= max_seconds:
+        return audio_path
+    ratio = dur / max_seconds
+    if ratio > 1.5:
+        logger.warning(
+            "Ses süresi (%.1fs) hedefin (%.1fs) 1.5x üstünde — hızlandırma kaliteyi düşürebilir.",
+            dur, max_seconds,
+        )
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    cmd = [
+        ffmpeg_bin, "-y",
+        "-i", str(audio_path.resolve()),
+        "-filter:a", f"atempo={ratio:.4f}",
+        "-c:a", "libmp3lame",
+        "-q:a", "2",
+        str(output_path.resolve()),
+    ]
+    logger.info(
+        "Ses süresi %.1fs > %.1fs, atempo=%.3f ile hızlandırılıyor.",
+        dur, max_seconds, ratio,
+    )
+    try:
+        subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=120)
+    except subprocess.CalledProcessError as e:
+        raise MediaPipelineError(f"ffmpeg atempo failed: {e.stderr[:500]}") from e
+    return output_path
 
 
 def ffprobe_duration_seconds(media_path: Path, ffprobe_bin: str) -> float:
@@ -48,18 +102,14 @@ def cut_background_clip(
     max_start = max(0, bg_duration - duration_sec - 1)
     start = random.uniform(0, max_start) if max_start > 0 else 0.0
     output_mp4.parent.mkdir(parents=True, exist_ok=True)
-    vf = (
-        "scale=1080:1920:force_original_aspect_ratio=increase,"
-        "crop=1080:1920,"
-        f"fps={FPS}"
-    )
     cmd = [
         ffmpeg_bin,
         "-y",
         "-ss", f"{start:.3f}",
         "-i", str(bg_video.resolve()),
         "-t", f"{duration_sec:.3f}",
-        "-vf", vf,
+        "-filter_complex", _blur_bg_filter(),
+        "-map", "[out]",
         "-an",
         "-c:v", "libx264",
         "-pix_fmt", "yuv420p",
@@ -191,7 +241,9 @@ def mux_audio(
     audio_path: Path,
     output_mp4: Path,
     ffmpeg_bin: str,
+    ffprobe_bin: str = "ffprobe",
 ) -> None:
+    audio_dur = ffprobe_duration_seconds(audio_path, ffprobe_bin)
     cmd = [
         ffmpeg_bin,
         "-y",
@@ -199,11 +251,12 @@ def mux_audio(
         str(video_path.resolve()),
         "-i",
         str(audio_path.resolve()),
+        "-t",
+        f"{audio_dur:.3f}",
         "-c:v",
         "copy",
         "-c:a",
         "aac",
-        "-shortest",
         str(output_mp4.resolve()),
     ]
     logger.info("ffmpeg mux audio -> %s", output_mp4.name)
@@ -211,6 +264,55 @@ def mux_audio(
         subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=600)
     except subprocess.CalledProcessError as e:
         raise MediaPipelineError(f"ffmpeg mux failed: {e.stderr[:500]}") from e
+
+
+def mix_ambient_audio(
+    *,
+    voice_path: Path,
+    ambient_path: Path,
+    output_path: Path,
+    volume: float = 0.08,
+    ffmpeg_bin: str,
+    ffprobe_bin: str = "ffprobe",
+) -> None:
+    """Ses dosyasının altına çok düşük sesli ambient karıştırır.
+
+    ``-stream_loop -1`` ile ambient gerektiği kadar döngülenir;
+    ``amix duration=first`` ile voice bitince durur.
+    """
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    voice_dur = ffprobe_duration_seconds(voice_path, ffprobe_bin)
+    fade_in = 2.0
+    fade_out = 3.0
+    fade_out_start = max(0, voice_dur - fade_out)
+    cmd = [
+        ffmpeg_bin,
+        "-y",
+        "-i", str(voice_path.resolve()),
+        "-stream_loop", "-1",
+        "-i", str(ambient_path.resolve()),
+        "-filter_complex",
+        (
+            f"[1:a]volume={volume:.4f},"
+            f"afade=t=in:d={fade_in:.1f},"
+            f"afade=t=out:st={fade_out_start:.1f}:d={fade_out:.1f}"
+            f"[amb];[0:a][amb]amix=inputs=2:duration=first[out]"
+        ),
+        "-map", "[out]",
+        "-c:a", "aac",
+        "-q:a", "2",
+        str(output_path.resolve()),
+    ]
+    logger.info(
+        "ffmpeg ambient mix -> %s (ambient=%s, vol=%.0f%%)",
+        output_path.name,
+        ambient_path.name,
+        volume * 100,
+    )
+    try:
+        subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=300)
+    except subprocess.CalledProcessError as e:
+        raise MediaPipelineError(f"ffmpeg ambient mix failed: {e.stderr[:500]}") from e
 
 
 def burn_subtitles(
@@ -363,12 +465,6 @@ def cut_and_concat_trailer_clips(
     output_mp4.parent.mkdir(parents=True, exist_ok=True)
     cache_dir = output_mp4.parent
 
-    vf = (
-        "scale=1080:1920:force_original_aspect_ratio=increase,"
-        "crop=1080:1920,"
-        f"fps={FPS}"
-    )
-
     clip_paths: list[Path] = []
     for i in range(n_clips):
         start = i * spacing
@@ -381,7 +477,8 @@ def cut_and_concat_trailer_clips(
             "-ss", f"{start:.3f}",
             "-i", str(trailer_path.resolve()),
             "-t", f"{actual_clip:.3f}",
-            "-vf", vf,
+            "-filter_complex", _blur_bg_filter(),
+            "-map", "[out]",
             "-an",
             "-c:v", "libx264",
             "-pix_fmt", "yuv420p",

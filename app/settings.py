@@ -52,6 +52,7 @@ class Settings(BaseSettings):
         alias="ELEVENLABS_MODEL_ID",
     )
     background_video_dir: str = Field(default="assets/backgrounds", alias="BACKGROUND_VIDEO_DIR")
+    ambient_audio_dir: str = Field(default="assets/ambient", alias="AMBIENT_AUDIO_DIR")
     ffmpeg_path: str = Field(default="ffmpeg", alias="FFMPEG_PATH")
     ffprobe_path: str = Field(default="ffprobe", alias="FFPROBE_PATH")
     default_language: str = Field(default="tr", alias="DEFAULT_LANGUAGE")

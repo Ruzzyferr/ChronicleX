@@ -124,8 +124,36 @@ def build_ass_for_scenes(
     logger.info("Wrote ASS (%s dialogue lines) -> %s", len(lines) - 1, output_path)
 
 
+def _is_sentence_end(word_text: str) -> bool:
+    """Kelimenin cümle sonu noktalama ile bitip bitmediğini kontrol et."""
+    return bool(word_text) and word_text.rstrip()[-1:] in ".?!…"
+
+
+def _chunk_words_sentence_aware(words: list[dict]) -> list[list[dict]]:
+    """Whisper kelimelerini cümle sınırlarına duyarlı şekilde chunk'la.
+
+    Her chunk 4-10 kelime arası. Cümle sonu tespit edilince chunk kesilir.
+    8 kelimeye ulaşılınca zorla kesilir (çok uzun cümlelerde).
+    """
+    chunks: list[list[dict]] = []
+    current: list[dict] = []
+    for w in words:
+        current.append(w)
+        word_text = str(w.get("word", "")).strip()
+        at_sentence_end = _is_sentence_end(word_text)
+        if (at_sentence_end and len(current) >= 4) or len(current) >= 8:
+            chunks.append(current)
+            current = []
+    if current:
+        if chunks and len(current) < 3:
+            chunks[-1].extend(current)
+        else:
+            chunks.append(current)
+    return chunks
+
+
 def build_ass_from_whisper(words: list[dict], output_path: Path) -> None:
-    """Word timestamp list -> ASS subtitles (4+4 block style)."""
+    """Word timestamp list -> ASS subtitles (sentence-aware chunking)."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
     style = _load_caption_style()
     lines: list[str] = [_ass_header(style)]
@@ -135,9 +163,8 @@ def build_ass_from_whisper(words: list[dict], output_path: Path) -> None:
         logger.warning("Whisper words empty, wrote ASS header only: %s", output_path)
         return
 
-    chunk_size = 8
-    for i in range(0, len(words), chunk_size):
-        chunk = words[i : i + chunk_size]
+    chunks = _chunk_words_sentence_aware(words)
+    for chunk in chunks:
         if not chunk:
             continue
         first = chunk[0]
@@ -150,8 +177,9 @@ def build_ass_from_whisper(words: list[dict], output_path: Path) -> None:
         if end <= start:
             end = start + 0.2
 
-        first_line_words = [str(w.get("word", "")).strip() for w in chunk[:4]]
-        second_line_words = [str(w.get("word", "")).strip() for w in chunk[4:8]]
+        mid = len(chunk) // 2
+        first_line_words = [str(w.get("word", "")).strip() for w in chunk[:mid]]
+        second_line_words = [str(w.get("word", "")).strip() for w in chunk[mid:]]
         line1 = " ".join(w for w in first_line_words if w)
         line2 = " ".join(w for w in second_line_words if w)
         if not line1 and not line2:

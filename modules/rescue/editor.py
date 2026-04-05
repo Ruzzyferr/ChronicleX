@@ -39,11 +39,46 @@ def ffprobe_duration(video_path: Path, ffprobe_bin: str = "ffprobe") -> float:
         return 0.0
 
 
+def _crop_filter() -> str:
+    """9:16 crop filtresi: ortadan kırp."""
+    return (
+        f"crop=ih*9/16:ih,"
+        f"scale={TARGET_W}:{TARGET_H}:force_original_aspect_ratio=decrease,"
+        f"pad={TARGET_W}:{TARGET_H}:(ow-iw)/2:(oh-ih)/2:black,"
+        f"fps={FPS}"
+    )
+
+
+def _cut_single_segment(
+    *,
+    input_path: Path,
+    output_path: Path,
+    start: float,
+    duration: float,
+    vf: str,
+    ffmpeg_bin: str,
+) -> None:
+    """Videodan tek bir segment kes (crop dahil)."""
+    cmd = [
+        ffmpeg_bin, "-y",
+        "-ss", f"{start:.2f}",
+        "-i", str(input_path),
+        "-t", f"{duration:.2f}",
+        "-vf", vf,
+        "-c:v", "libx264", "-preset", "fast", "-crf", "20",
+        "-c:a", "aac", "-b:a", "192k",
+        "-movflags", "+faststart",
+        str(output_path),
+    ]
+    _run_ffmpeg(cmd, f"segment_{start:.0f}")
+
+
 def crop_and_trim(
     *,
     input_path: Path,
     output_path: Path,
     target_duration: float = 59.0,
+    segment_length: float = 10.0,
     start_sec: float | None = None,
     end_sec: float | None = None,
     ffmpeg_bin: str = "ffmpeg",
@@ -51,8 +86,13 @@ def crop_and_trim(
 ) -> None:
     """Videoyu 9:16 crop + hedef süreye kes. Orijinal ses korunur.
 
-    start_sec/end_sec verilirse o aralığı kullanır (compilation videolar için).
-    Verilmezse videonun ilk %10'unu atlayıp ortadan başlar.
+    start_sec/end_sec verilirse o aralığı direkt kullanır (compilation videolar).
+
+    Video hedef süreden uzunsa akıllı örnekleme yapar:
+    - Videoyu segment_length saniyelik parçalara böler
+    - Eşit aralıklarla segment seçer (baştan, ortadan, sondan)
+    - Seçilen segmentleri birleştirip hedef süreye ulaşır
+    Böylece videonun tamamının özeti korunur.
     """
     output_path.parent.mkdir(parents=True, exist_ok=True)
     total_dur = ffprobe_duration(input_path, ffprobe_bin)
@@ -60,48 +100,177 @@ def crop_and_trim(
     if total_dur <= 0:
         raise MediaPipelineError(f"Video süresi alınamadı: {input_path}")
 
+    vf = _crop_filter()
+
+    # ── Manuel segment seçimi ──
     if start_sec is not None or end_sec is not None:
-        # Manuel segment seçimi (compilation videolar için)
-        start_offset = max(0.0, start_sec or 0.0)
-        clip_end = min(end_sec or total_dur, total_dur)
-        actual_duration = min(clip_end - start_offset, target_duration)
-        if actual_duration < 5:
+        s = max(0.0, start_sec or 0.0)
+        e = min(end_sec or total_dur, total_dur)
+        dur = min(e - s, target_duration)
+        if dur < 5:
             raise MediaPipelineError(
-                f"Seçilen segment çok kısa: {actual_duration:.1f}s "
-                f"(start={start_offset}, end={clip_end})"
+                f"Seçilen segment çok kısa: {dur:.1f}s (start={s}, end={e})"
             )
-        logger.info("Manuel segment: %.1fs - %.1fs (%.1fs)", start_offset, clip_end, actual_duration)
-    else:
-        # Otomatik: ilk %10'u atla (intro/logo)
-        start_offset = min(total_dur * 0.1, 10.0)
-        available = total_dur - start_offset
-        actual_duration = min(target_duration, available)
+        logger.info("Manuel segment: %.1fs - %.1fs (%.1fs)", s, e, dur)
+        cmd = [
+            ffmpeg_bin, "-y",
+            "-ss", f"{s:.2f}",
+            "-i", str(input_path),
+            "-t", f"{dur:.2f}",
+            "-vf", vf,
+            "-c:v", "libx264", "-preset", "fast", "-crf", "20",
+            "-c:a", "aac", "-b:a", "192k",
+            "-movflags", "+faststart",
+            str(output_path),
+        ]
+        _run_ffmpeg(cmd, "crop_and_trim_manual")
+        logger.info("Video kırpıldı (manuel): %.1fs, 9:16 format", dur)
+        return
 
-        if actual_duration < 10:
-            start_offset = 0
-            actual_duration = min(target_duration, total_dur)
+    # ── Video hedef süreye sığıyorsa direkt kes ──
+    if total_dur <= target_duration:
+        cmd = [
+            ffmpeg_bin, "-y",
+            "-i", str(input_path),
+            "-vf", vf,
+            "-c:v", "libx264", "-preset", "fast", "-crf", "20",
+            "-c:a", "aac", "-b:a", "192k",
+            "-movflags", "+faststart",
+            str(output_path),
+        ]
+        _run_ffmpeg(cmd, "crop_short_video")
+        logger.info("Video kırpıldı (kısa): %.1fs, 9:16 format", total_dur)
+        return
 
-    # 9:16 crop filtresi: ortadan kırp
-    vf = (
-        f"crop=ih*9/16:ih,"
-        f"scale={TARGET_W}:{TARGET_H}:force_original_aspect_ratio=decrease,"
-        f"pad={TARGET_W}:{TARGET_H}:(ow-iw)/2:(oh-ih)/2:black,"
-        f"fps={FPS}"
+    # ── Akıllı örnekleme: uzun videodan eşit aralıklı segmentler al ──
+    segments_needed = int(target_duration / segment_length)  # 60/10 = 6
+    total_segments = int(total_dur / segment_length)         # 180/10 = 18
+
+    if total_segments <= segments_needed:
+        # Yeterince segment yok, baştan kes
+        cmd = [
+            ffmpeg_bin, "-y",
+            "-i", str(input_path),
+            "-t", f"{target_duration:.2f}",
+            "-vf", vf,
+            "-c:v", "libx264", "-preset", "fast", "-crf", "20",
+            "-c:a", "aac", "-b:a", "192k",
+            "-movflags", "+faststart",
+            str(output_path),
+        ]
+        _run_ffmpeg(cmd, "crop_and_trim_simple")
+        logger.info("Video kırpıldı: %.1fs, 9:16 format", target_duration)
+        return
+
+    step = total_segments / segments_needed  # 18/6 = 3 → her 3 segmentten 1
+    pick_indexes = [int(round(i * step)) for i in range(segments_needed)]
+    # Duplicate'leri kaldır, sırala
+    pick_indexes = sorted(set(idx for idx in pick_indexes if idx < total_segments))
+
+    logger.info(
+        "Akıllı örnekleme: %d segmentten %d tanesi seçildi (her %.0f segmentten 1)",
+        total_segments, len(pick_indexes), step,
     )
 
+    # Her segmenti kes
+    temp_dir = output_path.parent / "_rescue_segments"
+    temp_dir.mkdir(parents=True, exist_ok=True)
+    segment_files: list[Path] = []
+
+    for i, seg_idx in enumerate(pick_indexes):
+        seg_start = seg_idx * segment_length
+        seg_file = temp_dir / f"seg_{i:03d}.mp4"
+        _cut_single_segment(
+            input_path=input_path,
+            output_path=seg_file,
+            start=seg_start,
+            duration=segment_length,
+            vf=vf,
+            ffmpeg_bin=ffmpeg_bin,
+        )
+        segment_files.append(seg_file)
+
+    # Concat listesi yaz
+    concat_list = temp_dir / "concat.txt"
+    lines = [f"file '{f.name}'" for f in segment_files]
+    concat_list.write_text("\n".join(lines), encoding="utf-8")
+
+    # Birleştir
     cmd = [
         ffmpeg_bin, "-y",
-        "-ss", f"{start_offset:.2f}",
-        "-i", str(input_path),
-        "-t", f"{actual_duration:.2f}",
-        "-vf", vf,
+        "-f", "concat", "-safe", "0",
+        "-i", str(concat_list),
         "-c:v", "libx264", "-preset", "fast", "-crf", "20",
         "-c:a", "aac", "-b:a", "192k",
         "-movflags", "+faststart",
         str(output_path),
     ]
-    _run_ffmpeg(cmd, "crop_and_trim")
-    logger.info("Video kırpıldı: %.1fs, 9:16 format", actual_duration)
+    _run_ffmpeg(cmd, "concat_segments")
+
+    # Temp temizle
+    import shutil
+    try:
+        shutil.rmtree(temp_dir)
+    except OSError:
+        pass
+
+    actual = len(pick_indexes) * segment_length
+    logger.info(
+        "Video örneklendi: %d segment x %.0fs = %.0fs, 9:16 format",
+        len(pick_indexes), segment_length, actual,
+    )
+
+
+def _write_overlay_ass(
+    output_path: Path,
+    text: str,
+    display_duration: float = 3.0,
+) -> None:
+    """Dramatik text overlay için ASS altyazı dosyası oluştur.
+
+    drawtext yerine ASS kullanıyoruz çünkü:
+    - Windows'ta drawtext Türkçe karakterlerle crash yapıyor
+    - ASS daha zengin stil desteği sunuyor (outline, shadow, fade)
+    """
+    # ASS zaman formatı: H:MM:SS.CC
+    def _fmt(sec: float) -> str:
+        h = int(sec // 3600)
+        m = int((sec % 3600) // 60)
+        s = sec % 60
+        return f"{h}:{m:02d}:{s:05.2f}"
+
+    start = _fmt(0)
+    end = _fmt(display_duration)
+
+    # Fade: \fad(fade_in_ms, fade_out_ms)
+    fade_in_ms = 500
+    fade_out_ms = 500
+
+    ass_content = f"""[Script Info]
+Title: Rescue Overlay
+ScriptType: v4.00+
+PlayResX: 1080
+PlayResY: 1920
+WrapStyle: 0
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Overlay,Arial,64,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,2,0,1,4,2,8,40,40,320,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,{start},{end},Overlay,,0,0,0,,{{\\fad({fade_in_ms},{fade_out_ms})}}{text}
+"""
+    output_path.write_text(ass_content, encoding="utf-8-sig")
+
+
+def _escape_ass_path(path: Path) -> str:
+    """Windows'ta ASS dosya yolundaki C: → C\\: dönüşümü."""
+    s = str(path).replace("\\", "/")
+    # Windows drive letter: C: → C\:
+    if len(s) >= 2 and s[1] == ":":
+        s = s[0] + "\\:" + s[2:]
+    return s
 
 
 def add_text_overlay(
@@ -114,29 +283,17 @@ def add_text_overlay(
 ) -> None:
     """Videonun başına dramatik text overlay ekle (fade-in/out ile).
 
-    Kalın beyaz yazı, siyah stroke, ekranın üst 1/3'ünde, ortalanmış.
+    ASS altyazı dosyası kullanır (drawtext Windows'ta Türkçe karakterlerle crash yapıyor).
+    Kalın beyaz yazı, siyah outline, ekranın üst kısmında, ortalanmış.
     """
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # FFmpeg drawtext için özel karakter escape
-    escaped = text.replace("'", "'\\''").replace(":", "\\:")
+    # ASS dosyasını video'nun yanına yaz
+    ass_path = output_path.parent / "overlay.ass"
+    _write_overlay_ass(ass_path, text, display_duration)
 
-    # Text overlay filtresi: fade-in 0.5s, display, fade-out 0.5s
-    fade_in = 0.5
-    fade_out = 0.5
-    end_time = display_duration
-
-    vf = (
-        f"drawtext="
-        f"text='{escaped}':"
-        f"fontsize=56:"
-        f"fontcolor=white:"
-        f"borderw=4:"
-        f"bordercolor=black:"
-        f"x=(w-text_w)/2:"
-        f"y=h/5:"
-        f"alpha='if(lt(t,{fade_in}),t/{fade_in},if(lt(t,{end_time - fade_out}),1,(({end_time}-t)/{fade_out})))'"
-    )
+    escaped_ass = _escape_ass_path(ass_path)
+    vf = f"ass='{escaped_ass}'"
 
     cmd = [
         ffmpeg_bin, "-y",
@@ -148,6 +305,13 @@ def add_text_overlay(
         str(output_path),
     ]
     _run_ffmpeg(cmd, "text_overlay")
+
+    # ASS dosyasını temizle
+    try:
+        ass_path.unlink()
+    except OSError:
+        pass
+
     logger.info("Text overlay eklendi: %s", text)
 
 
@@ -162,34 +326,59 @@ def generate_thumbnail(
     """Videodan dikkat çekici bir frame çekip üstüne başlık yazısı ekle.
 
     Videonun %30'undaki frame'i çeker (genellikle ilginç bir sahne).
-    Kırmızı-turuncu gradient arka planlı kalın yazı.
+    ASS overlay ile kırmızı outline'lı kalın beyaz yazı.
     """
     output_path.parent.mkdir(parents=True, exist_ok=True)
     total_dur = ffprobe_duration(video_path, ffprobe_bin)
     seek_point = max(1.0, total_dur * 0.3)
 
-    escaped = text.replace("'", "'\\''").replace(":", "\\:")
+    # Thumbnail için ASS: kırmızı outline, kalın, ortalı
+    ass_path = output_path.parent / "thumb_overlay.ass"
+    ass_content = f"""[Script Info]
+Title: Thumbnail Overlay
+ScriptType: v4.00+
+PlayResX: 1080
+PlayResY: 1920
+WrapStyle: 0
 
-    # Frame çek + üstüne kalın kırmızı yazı ekle
-    vf = (
-        f"drawtext="
-        f"text='{escaped}':"
-        f"fontsize=64:"
-        f"fontcolor=white:"
-        f"borderw=5:"
-        f"bordercolor=red:"
-        f"x=(w-text_w)/2:"
-        f"y=h/4"
-    )
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Thumb,Arial,72,&H00FFFFFF,&H000000FF,&H000000FF,&H80000000,-1,0,0,0,100,100,2,0,1,5,3,8,40,40,400,1
 
-    cmd = [
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:00.00,0:00:01.00,Thumb,,0,0,0,,{text}
+"""
+    ass_path.write_text(ass_content, encoding="utf-8-sig")
+    escaped_ass = _escape_ass_path(ass_path)
+
+    # Önce frame çek, sonra ASS overlay ekle
+    raw_frame = output_path.parent / "thumb_raw.jpg"
+    cmd_frame = [
         ffmpeg_bin, "-y",
         "-ss", f"{seek_point:.2f}",
         "-i", str(video_path),
         "-vframes", "1",
-        "-vf", vf,
+        "-q:v", "2",
+        str(raw_frame),
+    ]
+    _run_ffmpeg(cmd_frame, "thumbnail_frame")
+
+    # ASS overlay ekle
+    cmd_overlay = [
+        ffmpeg_bin, "-y",
+        "-i", str(raw_frame),
+        "-vf", f"ass='{escaped_ass}'",
         "-q:v", "2",
         str(output_path),
     ]
-    _run_ffmpeg(cmd, "thumbnail")
+    _run_ffmpeg(cmd_overlay, "thumbnail_overlay")
+
+    # Temizle
+    for f in (ass_path, raw_frame):
+        try:
+            f.unlink()
+        except OSError:
+            pass
+
     logger.info("Thumbnail oluşturuldu: %s", output_path)

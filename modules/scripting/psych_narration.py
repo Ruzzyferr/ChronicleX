@@ -66,11 +66,14 @@ Yanıtın YALNIZCA geçerli JSON olsun:
 {"suggestions": [{"title": "Kısa başlık", "hook": "Kısa, somut, şok edici bir gerçek cümlesi.", "why_viral": "Neden viral olur — 1 cümle"}, ...]}"""
 
 
+PSYCH_MODEL = "gpt-4o"  # gpt-4o-mini kalitesi yeterli değil, gpt-4o ile beyin yakan içerik
+
+
 def suggest_psych_topics(*, api_key: str, model: str) -> list[dict[str, str]]:
     """OpenAI'dan 3 psikoloji konu önerisi al."""
     client = OpenAI(api_key=api_key)
     resp = client.chat.completions.create(
-        model=model,
+        model=PSYCH_MODEL,
         temperature=0.9,
         response_format={"type": "json_object"},
         messages=[
@@ -119,50 +122,134 @@ def interactive_topic_select(*, api_key: str, model: str) -> str:
 
 # ── Script Üretimi ──
 
-PSYCH_NARRATION_SYSTEM = """Sen TikTok / Reels için dark psychology içerik üreticisisin.
+PSYCH_NARRATION_SYSTEM = """Sen Türkiye'de yaşayan, Türk gençliğini iyi tanıyan bir dark psychology içerik üreticisisin.
 Yanıtın YALNIZCA geçerli JSON olsun (başka metin yok).
 
 ## ADIM 1: TAM ANLATIM METNİ (narration)
 
-AMAÇ: İzleyici "bu gerçek mi lan?" deyip beyni yanmalı. Sonra "evet gerçekten de öyle" deyip
-videoyu kaydedip arkadaşına atmalı. Sıradan bilgi YASAK — her bilgi beyin yakmalı.
+AMAÇ: Türk genci "abi bu gerçek mi ya?" deyip videoyu kaydedip grubuna atmalı.
 
-ÖNEMLİ — SIRADANLIK FİLTRESİ:
-Verdiğin her örnek ve teknik şu testi geçmeli: "Bunu sokaktaki rastgele biri biliyor mu?"
-Biliyorsa YAZMA. Bilmiyorsa YAZ.
+## HEDEF KİTLE: TÜRKİYE GENÇLİĞİ
 
-YASAK ÖRNEKLER (çok basit, herkes biliyor):
-- "Göz teması güven verir" — ÇOK BASİT
-- "Gülümseme bulaşıcıdır" — ÇOK BASİT
-- "Birine iyilik yaparsan karşılık hisseder" — ÇOK BASİT
-- "İlk izlenim 7 saniyede oluşur" — ÇOK BASİT
-- "Kırmızı renk dikkat çeker" — ÇOK BASİT
+Sen Türkiye'de büyümüş, Türk aile yapısını, eğitim sistemini, sokak kültürünü bilen birisin.
+Örneklerin TÜRK GENÇLERİNİN GÜNLÜK HAYATINDAN olmalı. Batılı, uzak örnekler YASAK.
 
-DOĞRU SEVİYE ÖRNEKLERİ (bu kalitede olmalı):
-- "CIA sorgu teknisyenleri suçluyu konuşturmak için 'yanlış bilgi tekniği' kullanır. Bile bile yanlış bir detay söylerler, karşı taraf düzeltme dürtüsüne dayanamayıp gerçeği itiraf eder."
-- "Restoranlarda menüdeki en pahalı yemek satılmak için değil, onun yanındaki ikinci en pahalı yemeği makul göstermek için konur. Bu tekniğin adı 'decoy pricing' ve Apple da her ürün lansmanında kullanıyor."
-- "Psikopatlarda esneme bulaşmaz. Empati devreleri farklı çalıştığı için karşılarındaki kişinin esnemesine tepki vermezler. 2015 Baylor Üniversitesi çalışması bunu kanıtladı."
-- "İkea mobilyalarını kendin montajlıyorsun ve bu yüzden onlara gerçek değerlerinden fazla değer biçiyorsun. Harvard buna 'IKEA Etkisi' diyor — kendi emeğini kattığın her şeyi olduğundan değerli görürsün."
+TÜRKİYE'YE ÖZEL ÖRNEKLER KULLAN:
+- AVM kültürü, BİM/A101/ŞOK indirimleri, market taktikleri
+- Türk aile yapısı: "annen sana seçenek sunuyor ama ikisi de onun istediği"
+- Üniversite sistemi: YKS, sıralama baskısı, dershane, tercih dönemi
+- Sosyal medya: Türk Twitter/X, Instagram keşfet, TikTok Türkiye trendleri
+- İş hayatı: staj, asgari ücret, patron-çalışan ilişkisi, mülakat
+- Arkadaş grupları: mahalle, okul, askerlik, cemaat baskısı
+- Türk dizileri, reklamları, markaları (Trendyol, Getir, Hepsiburada)
+- Gündem: ekonomi, döviz, kira, enflasyon — gençlerin gerçek derdi
 
-YAPI:
-1. HOOK (ilk cümle): İzleyicinin beynini yakan, absürt ama gerçek bir bilgiyle aç.
-   DOĞRU: "Psikopatlarda esneme bulaşmaz. Eğer karşındaki hiç esnemiyorsa, dikkat et."
-   DOĞRU: "CIA'in bir sorgu tekniği var: bile bile yanlış bilgi ver, karşı taraf düzeltemeyip gerçeği söyler."
+YASAK ÖRNEKLER (Türk genci bağ kuramaz):
+- "Harvard'da yapılan bir araştırma..." — UZAK, SAHİPLENEMİYOR
+- "Amerika'da bir süpermarkette..." — ALAKASIZ
+- "MIT öğrencileri..." — BİZDEN DEĞİL
+- "New York'ta bir kadın..." — TÜRKİYE'DE DEĞİL
+
+DOĞRU ÖRNEKLER (Türk genci "abi ben de yaşadım" der):
+- "BİM'e sadece ekmek almaya giriyorsun. 10 dakika sonra elinde 3 poşet var. Ekmek en arkada çünkü. Yürürken gördüğün her şeyi sepete atıyorsun. Tesadüf değil, taktik."
+- "Annen diyor ki 'ya odanı topla ya da telefonu bırak.' İkisi de onun istediği. Üçüncü seçenek yok. Buna kısıtlı seçenek illüzyonu deniyor."
+- "Trendyol'da 500 liralık ayakkabıya bakıyorsun. Yanında 1200 liralık var, üstü çizili. 500'lük birden ucuz geliyor. Bu dikoy prayzing denen şey."
+- "YKS'den önce herkes 'rahat ol stres yapma' diyor. Ama stres yapma demek beyni daha çok strese sokuyor. Buna ironic process theory deniyor."
+
+## DİL VE TON
+
+Türk genci gibi konuş. Ağdalı, kibar, "efendim" tarzı değil. Samimi, direkt, biraz küstah.
+
+YASAK TON:
+- "Araştırmalar göstermektedir ki..." — MAKALE DEĞİL BU
+- "Bu fenomen şu şekilde açıklanabilir..." — DERS DEĞİL
+- "Sonuç olarak, kendinizi geliştirmek önemlidir." — VAAZ DEĞİL
+
+DOĞRU TON:
+- "Abi şimdi bunu duy."
+- "Bak şimdi, patron sana iki seçenek sunuyor."
+- "Sen farkında değilsin ama her gün bunu yaşıyorsun."
+- "Kısacası, seni oynuyorlar ve sen alkış tutuyorsun."
+
+KURAL: Her cümleyi yaz, sonra kendine sor: "20 yaşında bir Türk genci bunu arkadaşına böyle mi anlatır?"
+Hayırsa SİL, yeniden yaz.
+
+## İÇERİK KALİTESİ
+
+SIRADANLIK FİLTRESİ: "Bunu sokaktaki rastgele biri biliyor mu?" Biliyorsa YAZMA.
+
+YASAK (herkes biliyor):
+- Göz teması, gülümseme, ilk izlenim, kırmızı renk, karşılıklılık ilkesi
+
+## YAPI
+
+1. HOOK (ilk cümle): Türk gencinin beynini yakan, kendi hayatından bir gerçekle direkt gir.
+   DOĞRU: "BİM'e ekmek almaya girip 3 poşetle çıkıyorsun. Bu tesadüf değil, sana karşı kullanılan bir taktik."
+   DOĞRU: "Annen sana hep iki seçenek sunar. İkisi de onun istediği. Üçüncü seçenek aklına bile gelmez."
    YASAK: "Psikoloji dünyasında ilginç bir gerçek var..." / "Biliyor muydunuz..."
-2. TEKNİKLER: Her tekniği beyin yakıcı bir örnekle anlat.
-   - Tekniğin bilimsel/popüler adını ver (Zeigarnik Etkisi, DARVO, Pratfall Etkisi vb.)
-   - Absürt ama kanıtlanmış olduğunu göster (çalışma, deney, gerçek vaka)
-   - İzleyicinin kendi hayatında "aa evet bunu yaşamıştım" diyeceği bir örnek ver
-   - Karşı hamleyi/savunmayı da söyle — hem saldırı hem savunma
-3. KAPANIŞ: Somut CTA — "Hangisini fark ettin? Yoruma yaz." veya "Bunu bilen birini etiketle."
+
+2. GELİŞME: Konuyu EN AZ 2-3 FARKLI AÇIDAN anlat. Tek bilgi verip bırakma.
+   - Bilimsel adını Türkçe okunuşuyla ver, hemen sokak dilinde açıkla
+   - TÜRKİYE'DEN spesifik örnek ver (marka, yer, durum)
+   - Gencin kendi hayatında "lan ben de yaşadım" diyeceği sahne çiz
+   - Dark tarafı göster: bunu sana karşı KİM, NASIL kullanıyor
+   - Her açıdan sonra şok edici bir detayla bitir
+
+3. KAPANIŞ: Her video FARKLI kapanış. Konuya özel, Türk gencini kışkırtan.
+   YASAK: "Hangisini yaşadın?", "Yoruma yaz", "Ne düşünüyorsunuz?" — HER VİDEODA AYNI
+   DOĞRU: Konuya özel, tartışma başlatan, kişisel.
+   Örnek: "Trendyol'dan son aldığın şeye bak. Yanındaki pahalı ürün yüzünden mi aldın? Fiyatı yoruma yaz."
+   Örnek: "Annenin son 'ya şunu yap ya bunu yap' dediği anı hatırla. Üçüncü seçeneği hiç düşündün mü?"
+
+## ÖRNEK KALİTESİ — KRİTİK
+
+Her örnek MANTIK TESTİ + TÜRKİYE TESTİ geçmeli:
+1. "Bu şaşırtıcı mı yoksa bariz mi?" — Barizse SİL.
+2. "Türk genci bunu yaşıyor mu?" — Yaşamıyorsa SİL.
+
+YASAK (mantıksız veya alakasız):
+- "Biriyle yemeğe gidiyorsun ve bağ kuruyorsun" — BARIZ
+- "MIT öğrencileri..." — TÜRKİYE'DE DEĞİL
+- "Bir alışveriş merkezinde yere düşen biri..." — ZORLAMA
+
+DOĞRU (şaşırtıcı + Türkiye):
+- "BİM kasasının yanına çikolata koyuyor. Sırada beklerken gözün takılıyor, alıyorsun. Buna impals bayıng deniyor. Sadece BİM değil, A101, ŞOK, Migros hepsi yapıyor."
+- "Dershane hocası 'bu konuyu herkes yanlış yapıyor' diyor. Sen birden dikkat kesiliyorsun. Çünkü beyin tehdit algılıyor. Buna loss aversion deniyor, kaybetme korkusu."
+- "İnstagram keşfette hep aynı tarz postlar görüyorsun. Beynin buna alışıyor ve farklı düşünemez hale geliyor. Buna filtre balonu deniyor."
 
 KURALLAR:
-- Minimum 3 beyin yakıcı teknik/bilgi. Her biri "bu gerçek mi?" dedirtmeli.
-- Felsefe ve metafor KESİNLİKLE YASAK. Her cümle somut ve şok edici olmalı.
-- Kısa, vurucu cümleler — TikTok formatı.
-- Bilimsel terim kullan AMA hemen açıkla. İzleyici hem terimi hem anlamını öğrensin.
-- Ton: yasaklanmış bilgiyi sızdıran ajan gibi. Gizli, tehlikeli, güvenilir.
-- Kapanışta felsefe YAPMA. Son cümle de somut ve vurucu olsun.
+- Felsefe, tavsiye, "kendinizi geliştirin" KESİNLİKLE YASAK.
+- Genel ifadeler YASAK: "araştırmalar gösteriyor" — KİM, NEREDE, NE ZAMAN?
+- Script içinde max 1-2 soru. Soru yerine bilgiyi direkt patlat.
+- Kısa, vurucu cümleler. Max 15-20 kelime per cümle.
+- "Bu kadar basit" gibi küçümseme YASAK.
+- Ton: mahallede takılırken kanka'na beyin yakan bilgi anlatan adam.
+- İçerik SIĞ olmasın: en az 2-3 farklı açı (günlük hayat, dark kullanım, savunma).
+
+## YAZIM VE NOKTALAMA — TTS İÇİN KRİTİK
+
+Bu metin seslendirilecek (TTS). Doğru okunması için:
+
+1. NOKTALAMA: Her cümle nokta/ünlem/soru ile bitmeli. Virgüller doğru yerde.
+   Uzun cümleleri kısa cümlelere böl — TTS uzun cümlelerde garip duraklamalar yapıyor.
+
+2. İNGİLİZCE TERİMLER: SADECE Türkçe okunuşuyla yaz. Parantez içi İngilizce YASAK.
+   TTS her şeyi okuyor, İngilizce yazarsan yanlış okur veya iki kere okur.
+   - "Placebo" → "Plasebo"
+   - "Decoy" → "Dikoy"
+   - "Gaslighting" → "Geslayting"
+   - "Door-in-the-face" → "Dor in dı feys"
+   - "Anchoring" → "Enkoring"
+   - "Framing" → "Freyming"
+   - "Priming" → "Prayming"
+   - "Bystander" → "Baystender"
+   - "Impulse buying" → "İmpals bayıng"
+   - "Loss aversion" → "Los averjiın"
+   - "Filter bubble" → "Filtre balonu" (Türkçe çevirisi varsa onu kullan)
+   YASAK: "Plasebo (Placebo) etkisi" — TTS iki kere okur
+   DOĞRU: "Plasebo etkisi"
+
+3. CÜMLE UZUNLUĞU: Max 15-20 kelime. Uzunsa ikiye böl.
 
 ## ADIM 2: SAHNE BÖLME
 - narration metnini 6–10 sahneye böl.
@@ -208,8 +295,8 @@ Tek JSON nesnesi döndür."""
 def _call_openai(*, api_key: str, model: str, topic: TopicConfig) -> ScenesLLMResponse:
     client = OpenAI(api_key=api_key)
     resp = client.chat.completions.create(
-        model=model,
-        temperature=0.5,
+        model=PSYCH_MODEL,
+        temperature=0.7,
         response_format={"type": "json_object"},
         messages=[
             {"role": "system", "content": PSYCH_NARRATION_SYSTEM},
@@ -219,6 +306,119 @@ def _call_openai(*, api_key: str, model: str, topic: TopicConfig) -> ScenesLLMRe
     content = resp.choices[0].message.content or "{}"
     data: dict[str, Any] = json.loads(content)
     return ScenesLLMResponse.model_validate(data)
+
+
+# ── Sosyal Medya Metadata ──
+
+SOCIAL_METADATA_SYSTEM = """Sen 2026'da çalışan, güncel trendleri bilen bir sosyal medya uzmanısın.
+Verilen psikoloji/dark psychology video konusu ve script'i için TikTok, Instagram ve YouTube için AYRI AYRI içerik üreteceksin.
+
+## GENEL KURALLAR
+
+- Tüm hook'lar ve açıklamalar TAM CÜMLELER olmalı. Yarım bırakılmış cümle YASAK.
+- Hook'larda SORU SORMA. Direkt şok edici bir bilgi/iddia yaz.
+- Emoji kullanımı: TikTok'ta minimal (0-1), Instagram'da orta (2-3), YouTube'da yok.
+- DİL: Türkçe. Hashtagler hem Türkçe hem İngilizce karışık.
+
+## PLATFORM KURALLARI
+
+### TikTok
+- Hook: Max 10 kelime, şok edici, soru YASAK. "Beynin seni kandırıyor ve sen farkında bile değilsin."
+- Başlık: Kısa, merak uyandıran, emoji max 1
+- Açıklama: Max 2 cümle, vurucu
+- Hashtagler: 5-8 adet. 2026 TikTok trendleri. #fyp #foryou #keşfet GİBİ ÖLÜ hashtagler YASAK.
+  DOĞRU: #darkpsikoloji #beyinhack #psikolojikgerçekler #bilimkurgu #zihinoyunları
+- En iyi saatler: Hafta içi 19:00-21:00, hafta sonu 14:00-16:00
+
+### Instagram Reels
+- Hook: Max 15 kelime, merak uyandıran bilgi
+- Başlık: Carousel/Reels formatına uygun
+- Açıklama: 3-5 cümle, hikaye anlatır gibi, CTA içermeli
+- Hashtagler: 10-15 adet. Niş + orta büyüklük karışımı.
+  YASAK: #keşfet #instagram #instagood #motivation #love — ÖLMÜŞ hashtagler
+  DOĞRU: #psikolojibilimi #darkpsychology #manipülasyon #zihinokuma #bilimselgerçekler
+- En iyi saatler: Hafta içi 11:00-13:00 veya 19:00-21:00
+
+### YouTube Shorts
+- Hook: SEO uyumlu, arama yapılabilir
+- Başlık: Max 60 karakter, anahtar kelime içermeli, clickbait ama gerçek
+- Açıklama: 3-5 cümle, anahtar kelime yoğun, izleyiciyi kanala yönlendir
+- Hashtagler: 5-8 adet, arama odaklı
+  DOĞRU: #psikoloji #darkpsychology #shorts #bilim #beyin
+- En iyi saatler: Hafta içi 14:00-16:00, hafta sonu 10:00-12:00
+
+## YASAK HASHTAGLER (ölü, spam, 2020 kalıntısı — KULLANMA):
+#keşfet #fyp #foryou #foryoupage #viral #trending #instagood #love #motivation
+#kişiselgelişim #motivasyon #başarı #hedef #hayat #günaydın #instadaily
+
+best_time formatı: "Pazartesi/Çarşamba/Cuma 19:00-21:00" gibi gün + saat aralığı.
+
+Yanıtın YALNIZCA geçerli JSON olsun:
+{
+  "tiktok": {
+    "hook": "...",
+    "title": "...",
+    "description": "...",
+    "hashtags": ["#tag1", "#tag2", ...],
+    "best_time": "Gün + saat aralığı"
+  },
+  "instagram": {
+    "hook": "...",
+    "title": "...",
+    "description": "...",
+    "hashtags": ["#tag1", "#tag2", ...],
+    "best_time": "Gün + saat aralığı"
+  },
+  "youtube": {
+    "hook": "...",
+    "title": "...",
+    "description": "...",
+    "hashtags": ["#tag1", "#tag2", ...],
+    "best_time": "Gün + saat aralığı"
+  }
+}"""
+
+
+def generate_social_metadata(*, topic_name: str, narration: str, api_key: str) -> dict:
+    """AI ile 3 platform için sosyal medya metadata üret."""
+    client = OpenAI(api_key=api_key)
+    resp = client.chat.completions.create(
+        model=PSYCH_MODEL,
+        temperature=0.7,
+        response_format={"type": "json_object"},
+        messages=[
+            {"role": "system", "content": SOCIAL_METADATA_SYSTEM},
+            {"role": "user", "content": f"Konu: {topic_name}\n\nScript:\n{narration}"},
+        ],
+    )
+    content = resp.choices[0].message.content or "{}"
+    return json.loads(content)
+
+
+def _write_social_txt_files(social: dict, script_dir: Path) -> None:
+    """Her platform için ayrı txt dosyası yaz."""
+    for platform in ("tiktok", "instagram", "youtube"):
+        data = social.get(platform, {})
+        if not data:
+            continue
+        lines = [
+            f"=== {platform.upper()} ===",
+            "",
+            f"HOOK: {data.get('hook', '')}",
+            "",
+            f"BAŞLIK: {data.get('title', '')}",
+            "",
+            "AÇIKLAMA:",
+            data.get("description", ""),
+            "",
+            "HASHTAGLER:",
+            " ".join(data.get("hashtags", [])),
+            "",
+            f"EN İYİ PAYLAŞIM SAATİ: {data.get('best_time', '')}",
+            "",
+        ]
+        path = script_dir / f"{platform}.txt"
+        path.write_text("\n".join(lines), encoding="utf-8")
 
 
 def psych_scenes_json_path(output_base: Path) -> Path:
@@ -253,4 +453,14 @@ def write_psych_script_and_scenes(
         encoding="utf-8",
     )
     logger.info("Psikoloji senaryosu yazıldı: %s sahne, script.txt + topic_scenes.json", len(scenes))
+
+    # Sosyal medya metadata üret (txt dosyaları)
+    social = generate_social_metadata(
+        topic_name=topic.topic_name,
+        narration=narration,
+        api_key=api_key,
+    )
+    _write_social_txt_files(social, script_dir)
+    logger.info("Sosyal medya metadata yazıldı: tiktok.txt, instagram.txt, youtube.txt")
+
     return scenes
